@@ -749,15 +749,15 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     
     private fun updateLabels() {
         if (isSymbolMode) {
-            symBtn?.text = if (isLatinSymbolMode) "ABC" else "अल्"
+            symBtn?.text = if (isLatinSymbolMode) "ABC" else "अल्".toBrahmiScript(currentScript)
             shiftBtn?.text = if (isShiftLocked) "⇪" else "⇧"
             spaceBtn?.text = currentScript.iastName
         } else if (isLatinMode) {
-            symBtn?.text = "१२३"
+            symBtn?.text = "१२३".toBrahmiScript(currentScript)
             shiftBtn?.text = "EN"
             spaceBtn?.text = "English"
         } else {
-            symBtn?.text = "१२३"
+            symBtn?.text = "१२३".toBrahmiScript(currentScript)
             shiftBtn?.text = "EN"
             spaceBtn?.text = currentScript.nativeName
         }
