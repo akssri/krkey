@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.KrKey" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

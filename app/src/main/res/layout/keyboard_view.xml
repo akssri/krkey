@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#FFDDDDDD"
+    android:padding="2dp">
+
+    <!-- Row 1 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c1" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ओ" app:textFlick="ऒ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c2" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="क" app:textFlick="ख" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c3" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="भ" app:textFlick="ब" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c4" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ड" app:textFlick="ढ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c5" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ट" app:textFlick="ठ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c6" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ऋ" app:textFlick="ॠ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c7" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ह" app:textFlick="ङ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c8" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ग" app:textFlick="घ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c9" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="द" app:textFlick="ध" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r1c10" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ज" app:textFlick="झ" />
+    </LinearLayout>
+
+    <!-- Row 2 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c1" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="उ" app:textFlick="ऊ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c2" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ए" app:textFlick="ऎ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c3" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="अ" app:textFlick="आ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c4" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="इ" app:textFlick="ई" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c5" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="य" app:textFlick="ळ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c6" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="प" app:textFlick="फ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c7" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="र" app:textFlick="ष" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c8" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="व" app:textFlick="ल" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r2c9" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="त" app:textFlick="थ" />
+    </LinearLayout>
+
+    <!-- Row 3 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/key_shift" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.2" android:layout_margin="1dp" android:text="⇧" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r3c2" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ऐ" app:textFlick="औ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r3c3" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ं" app:textFlick="ँ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r3c4" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="म" app:textFlick="ण" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r3c5" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="न" app:textFlick="ञ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r3c6" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="ः" app:textFlick="ऽ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r3c7" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="च" app:textFlick="छ" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r3c8" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="स" app:textFlick="श" />
+        <Button android:id="@+id/key_backspace" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.2" android:layout_margin="1dp" android:text="⌫" />
+    </LinearLayout>
+
+    <!-- Row 4 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/key_sym" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.5" android:layout_margin="1dp" android:text="\?123" />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r4c2" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="/" app:textFlick="'" />
+        <Button android:id="@+id/key_space" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="4" android:layout_margin="1dp" android:text=" " />
+        <com.akssri.krkey.FlickKeyView android:id="@+id/r4c4" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="1dp" app:textBase="।" app:textFlick="!" />
+        <Button android:id="@+id/key_enter" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.5" android:layout_margin="1dp" android:text="⏎" />
+    </LinearLayout>
+
+</LinearLayout>

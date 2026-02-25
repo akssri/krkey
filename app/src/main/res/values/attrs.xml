@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="FlickKeyView">
+        <attr name="textBase" format="string" />
+        <attr name="textFlick" format="string" />
+    </declare-styleable>
+</resources>
