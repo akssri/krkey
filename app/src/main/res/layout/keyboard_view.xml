@@ -9,6 +9,7 @@
 
     <!-- Preview/Candidate Bar -->
     <HorizontalScrollView
+        android:id="@+id/candidate_bar"
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:background="@color/special_key_bg_color"

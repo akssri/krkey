@@ -51,6 +51,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var shiftBtn: Button? = null
     private var symBtn: Button? = null
     private var spaceBtn: Button? = null
+    private var previewText: TextView? = null
+    private var candidateBar: View? = null
     private var candidateContainer: LinearLayout? = null
     private var gestureTrailView: GestureTrailView? = null
     private var wordPredictor: WordPredictor? = null
@@ -77,6 +79,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
         val themedContext = ContextThemeWrapper(this, R.style.Theme_KrKey)
         val layout = LayoutInflater.from(themedContext).inflate(R.layout.keyboard_view, null) as LinearLayout
+        previewText = layout.findViewById(R.id.preview_text)
+        candidateBar = layout.findViewById(R.id.candidate_bar)
         candidateContainer = layout.findViewById(R.id.candidate_container)
         gestureTrailView = layout.findViewById(R.id.gesture_trail)
         
@@ -636,6 +640,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     private fun updateKeys() {
         updateLabels()
+        updateBarVisibility()
         val currentTf = if (!isLatinMode) {
             when (currentScript) {
                 BrahmiScript.SIDDHAM -> siddhamTypeface
@@ -655,6 +660,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             val (baseLabel, flickLabel) = getLabelsForKey(config)
             key.setText(baseLabel, flickLabel)
         }
+    }
+
+    private fun updateBarVisibility() {
+        candidateBar?.visibility = if (isLatinMode && !isSymbolMode) View.VISIBLE else View.GONE
     }
 
     private fun getLabelsForKey(config: KeyConfig): Pair<String, String> {
@@ -733,7 +742,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             if (isShifted) text = text.uppercase()
             text
         } else {
-            if (isFlick) config.flick else config.base
+            if (config.type == KeyType.VOWEL && currentBase.isNotEmpty()) {
+                if (isFlick) (config.matraFlick ?: config.flick)
+                else (config.matraBase ?: config.base)
+            } else {
+                if (isFlick) config.flick else config.base
+            }
         }
         
         return if (isLatinMode && !isSymbolMode) outText else outText.toBrahmiScript(currentScript)
