@@ -28,11 +28,12 @@ class FlickKeyView @JvmOverloads constructor(
     private var startY: Float = 0f
     private var isFlick: Boolean = false
     
-    // Configuration variables
-    private val flickThreshold = 50f // pixels
-    private val popupYOffset = -250 // pixels above the key
-    private val hintPaddingTop = -15
-    private val hintPaddingRight = 10
+    // Configuration variables (converted from dp to px for consistency across devices)
+    private val density = context.resources.displayMetrics.density
+    private val flickThreshold = 16f * density // 16dp
+    private val popupYOffset = (-80f * density).toInt() // -80dp above the key
+    private val hintPaddingTop = (-1f * density).toInt() // -1dp
+    private val hintPaddingRight = (3f * density).toInt() // 3dp
 
     private var popupWindow: PopupWindow? = null
     private var popupTextView: TextView? = null
@@ -57,7 +58,7 @@ class FlickKeyView @JvmOverloads constructor(
         }
 
         // Setup views
-        setBackgroundResource(android.R.drawable.btn_default)
+        setBackgroundResource(R.drawable.key_bg)
         isClickable = true
         isFocusable = true
 
@@ -65,7 +66,7 @@ class FlickKeyView @JvmOverloads constructor(
             text = textBase
             textSize = 22f
             gravity = Gravity.CENTER
-            setTextColor(ContextCompat.getColor(context, android.R.color.black))
+            setTextColor(ContextCompat.getColor(context, R.color.key_text_color))
         }
         
         // This is the one that appears during flick
@@ -74,7 +75,7 @@ class FlickKeyView @JvmOverloads constructor(
             textSize = 22f
             gravity = Gravity.CENTER
             visibility = View.INVISIBLE
-            setTextColor(ContextCompat.getColor(context, android.R.color.holo_blue_dark))
+            setTextColor(ContextCompat.getColor(context, R.color.flick_text_color))
         }
 
         // This is the permanent gray hint
@@ -83,7 +84,7 @@ class FlickKeyView @JvmOverloads constructor(
             textSize = 12f
             gravity = Gravity.TOP or Gravity.END
             setPadding(0, hintPaddingTop, hintPaddingRight, 0)
-            setTextColor(ContextCompat.getColor(context, android.R.color.darker_gray))
+            setTextColor(ContextCompat.getColor(context, R.color.hint_text_color))
         }
 
         addView(baseTextView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="keyboard_bg">#181818</color>
+    <color name="key_bg_color">#323232</color>
+    <color name="special_key_bg_color">#232323</color>
+    <color name="key_text_color">#ffffff</color>
+    <color name="hint_text_color">#aaaaaa</color>
+    <color name="flick_text_color">#64b5f6</color>
+    <color name="key_shadow">#000000</color>
+</resources>

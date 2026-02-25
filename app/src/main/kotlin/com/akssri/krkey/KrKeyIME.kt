@@ -6,6 +6,9 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.view.inputmethod.InputConnection
+import android.os.Handler
+import android.os.Looper
+import android.view.MotionEvent
 
 class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
@@ -50,10 +53,33 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             key.setOnKeyListener(this)
         }
         
-        setupButton(layout, R.id.key_backspace) {
-            val ic = currentInputConnection
-            ic?.deleteSurroundingText(1, 0)
-            updateBase()
+        val backspaceBtn = layout.findViewById<Button>(R.id.key_backspace)
+        if (backspaceBtn != null) {
+            val handler = Handler(Looper.getMainLooper())
+            val repeatRunnable = object : Runnable {
+                override fun run() {
+                    currentInputConnection?.deleteSurroundingText(1, 0)
+                    updateBase()
+                    handler.postDelayed(this, 50) // Repeat delay
+                }
+            }
+            backspaceBtn.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        backspaceBtn.isPressed = true
+                        currentInputConnection?.deleteSurroundingText(1, 0)
+                        updateBase()
+                        handler.postDelayed(repeatRunnable, 400) // Initial delay
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        backspaceBtn.isPressed = false
+                        handler.removeCallbacks(repeatRunnable)
+                        true
+                    }
+                    else -> false
+                }
+            }
         }
         
         setupButton(layout, R.id.key_space) {
