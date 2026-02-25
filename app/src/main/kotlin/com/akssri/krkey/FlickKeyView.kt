@@ -112,7 +112,18 @@ class FlickKeyView @JvmOverloads constructor(
     }
     
     private fun showPopup(text: String?) {
-        // Disabled
+        if (text == null) return
+        popupTextView?.text = text
+        
+        if (popupWindow?.isShowing != true) {
+            // Position above the key using milestone-3 logic
+            try {
+                popupWindow?.showAsDropDown(this, 0, -this.height + popupYOffset)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        popupWindow?.update()
     }
     
     private fun dismissPopup() {
