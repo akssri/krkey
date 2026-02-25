@@ -45,7 +45,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
-        <androidx.appcompat.widget.AppCompatButton android:id="@+id/key_shift" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.2" android:layout_margin="3dp" android:background="@drawable/special_key_bg" android:textColor="@color/key_text_color" android:text="⇧" android:textAllCaps="false" android:gravity="center" android:padding="0dp" />
+        <androidx.appcompat.widget.AppCompatButton android:id="@+id/key_shift" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.2" android:layout_margin="3dp" android:background="@drawable/special_key_bg" android:textColor="@color/key_text_color" android:text="EN" android:textAllCaps="false" android:gravity="center" android:padding="0dp" />
         <com.akssri.krkey.FlickKeyView android:id="@+id/r3c2" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="3dp" app:textBase="ऐ" app:textFlick="औ" />
         <com.akssri.krkey.FlickKeyView android:id="@+id/r3c3" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="3dp" app:textBase="ं" app:textFlick="ँ" />
         <com.akssri.krkey.FlickKeyView android:id="@+id/r3c4" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="3dp" app:textBase="म" app:textFlick="ण" />
@@ -61,7 +61,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
-        <androidx.appcompat.widget.AppCompatButton android:id="@+id/key_sym" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.5" android:layout_margin="3dp" android:background="@drawable/special_key_bg" android:textColor="@color/key_text_color" android:text="\?123" android:textAllCaps="false" android:gravity="center" android:padding="0dp" />
+        <androidx.appcompat.widget.AppCompatButton android:id="@+id/key_sym" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1.5" android:layout_margin="3dp" android:background="@drawable/special_key_bg" android:textColor="@color/key_text_color" android:text="१२३" android:textAllCaps="false" android:gravity="center" android:padding="0dp" />
         <com.akssri.krkey.FlickKeyView android:id="@+id/r4c2" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="3dp" app:textBase="/" app:textFlick="'" />
         <androidx.appcompat.widget.AppCompatButton android:id="@+id/key_space" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="4" android:layout_margin="3dp" android:background="@drawable/key_bg" android:textColor="@color/key_text_color" android:text=" " android:textAllCaps="false" android:gravity="center" android:padding="0dp" />
         <com.akssri.krkey.FlickKeyView android:id="@+id/r4c4" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_margin="3dp" app:textBase="।" app:textFlick="!" />

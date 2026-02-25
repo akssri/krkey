@@ -1,97 +1,49 @@
 package com.akssri.krkey
 
 import android.inputmethodservice.InputMethodService
-import android.view.KeyEvent
-import android.view.View
-import android.widget.Button
-import android.widget.LinearLayout
-import android.view.inputmethod.InputConnection
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.widget.Button
+import android.widget.LinearLayout
 
 class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     private val vyanjanas = "़कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळ"
     private var currentBase: String = ""
-    private var isShifted: Boolean = false
-    private var isSymbolMode: Boolean = false
-    private var allKeys: List<FlickKeyView> = emptyList()
-
-    enum class KeyType { SIMPLE, VOWEL, MODIFIER, CONSONANT }
-
-    data class KeyConfig(
-        val id: Int,
-        val type: KeyType,
-        val base: String,
-        val flick: String,
-        val matraBase: String? = null,
-        val matraFlick: String? = null,
-        val symBase: String? = null,
-        val symFlick: String? = null
-    )
-
-    private val keyConfigs = listOf(
-                // Consonants (Row 1)
-                KeyConfig(R.id.r1c2, KeyType.CONSONANT, "क", "ख", symBase = "२", symFlick = "2"),
-                KeyConfig(R.id.r1c3, KeyType.CONSONANT, "भ", "ब", symBase = "३", symFlick = "3"),
-                KeyConfig(R.id.r1c4, KeyType.CONSONANT, "ड", "ढ", symBase = "४", symFlick = "4"),
-                KeyConfig(R.id.r1c5, KeyType.CONSONANT, "ट", "ठ", symBase = "५", symFlick = "5"),
-                KeyConfig(R.id.r1c7, KeyType.CONSONANT, "ह", "ङ", symBase = "७", symFlick = "7"),
-                KeyConfig(R.id.r1c8, KeyType.CONSONANT, "ग", "घ", symBase = "८", symFlick = "8"),
-                KeyConfig(R.id.r1c9, KeyType.CONSONANT, "द", "ध", symBase = "९", symFlick = "9"),
-                KeyConfig(R.id.r1c10, KeyType.CONSONANT, "ज", "झ", symBase = "०", symFlick = "0"),
-        
-                // Consonants (Row 2)
-                KeyConfig(R.id.r2c5, KeyType.CONSONANT, "य", "ळ", symBase = "=", symFlick = "§"),
-                KeyConfig(R.id.r2c6, KeyType.CONSONANT, "प", "फ", symBase = "(", symFlick = "{"),
-                KeyConfig(R.id.r2c7, KeyType.CONSONANT, "र", "ष", symBase = ")", symFlick = "}"),
-                KeyConfig(R.id.r2c8, KeyType.CONSONANT, "व", "ल", symBase = "@", symFlick = "%"),
-                KeyConfig(R.id.r2c9, KeyType.CONSONANT, "त", "थ", symBase = ";", symFlick = ":"),
-        
-                // Consonants (Row 3)
-                KeyConfig(R.id.r3c4, KeyType.CONSONANT, "म", "ण", symBase = "\\", symFlick = "/"),
-                KeyConfig(R.id.r3c5, KeyType.CONSONANT, "न", "ञ", symBase = "'", symFlick = "\""),
-                KeyConfig(R.id.r3c7, KeyType.CONSONANT, "च", "छ", symBase = "]", symFlick = "~"),
-                KeyConfig(R.id.r3c8, KeyType.CONSONANT, "स", "श", symBase = "₹", symFlick = "$"),
-        
-                // Vowels (Row 1)
-                KeyConfig(R.id.r1c1, KeyType.VOWEL, "ओ", "ऒ", "ो", "ॊ", symBase = "१", symFlick = "1"),
-                KeyConfig(R.id.r1c6, KeyType.VOWEL, "ऋ", "ॠ", "ृ", "ॄ", symBase = "६", symFlick = "6"),
-        
-        // Vowels (Row 2)
-        KeyConfig(R.id.r2c1, KeyType.VOWEL, "उ", "ऊ", "ु", "ू", symBase = "*", symFlick = "`"),
-        KeyConfig(R.id.r2c2, KeyType.VOWEL, "ए", "ऎ", "े", "ॆ", symBase = "#", symFlick = "^"),
-        KeyConfig(R.id.r2c3, KeyType.VOWEL, "अ", "आ", "्", "ा", symBase = "+", symFlick = "|"),
-        KeyConfig(R.id.r2c4, KeyType.VOWEL, "इ", "ई", "ि", "ी", symBase = "-", symFlick = "_"),
-        
-        // Vowels (Row 3)
-        KeyConfig(R.id.r3c2, KeyType.VOWEL, "ऐ", "औ", "ै", "ौ", symBase = "ऌ", symFlick = "ॡ"),
-        
-        // Modifiers (Row 3)
-        KeyConfig(R.id.r3c3, KeyType.MODIFIER, "ं", "ँ", symBase = "़", symFlick = "ॐ"),
-        KeyConfig(R.id.r3c6, KeyType.MODIFIER, "ः", "ऽ", symBase = "[", symFlick = "&"),
-        
-        // Simple (Row 4)
-        KeyConfig(R.id.r4c2, KeyType.SIMPLE, "/", "'", symBase = ",", symFlick = "?"),
-        KeyConfig(R.id.r4c4, KeyType.SIMPLE, "।", "!", symBase = ".", symFlick = "!")
-    )
     
-    private val configMap by lazy { keyConfigs.associateBy { it.id } }
+    // State Flags
+    private var isLatinMode: Boolean = false
+    private var isSymbolMode: Boolean = false
+    private var isLatinSymbolMode: Boolean = false
+    private var isShifted: Boolean = false
+    private var isShiftLocked: Boolean = false
+    private var lastShiftTime: Long = 0
+    
+    // Views
+    private var allKeys: List<FlickKeyView> = emptyList()
+    private var shiftBtn: Button? = null
+    private var symBtn: Button? = null
 
     override fun onCreateInputView(): View {
         val layout = layoutInflater.inflate(R.layout.keyboard_view, null) as LinearLayout
         
-        val keys = mutableListOf<FlickKeyView>()
-        findAllFlickKeys(layout, keys)
-        allKeys = keys
-
-        for (key in allKeys) {
-            key.setOnKeyListener(this)
-        }
+        allKeys = findAllFlickKeys(layout)
+        allKeys.forEach { it.setOnKeyListener(this) }
         
+        setupSpecialKeys(layout)
+        updateKeys() // Initial draw
+        
+        return layout
+    }
+    
+    private fun setupSpecialKeys(layout: View) {
         val backspaceBtn = layout.findViewById<Button>(R.id.key_backspace)
-        if (backspaceBtn != null) {
+        backspaceBtn?.let { btn ->
             val handler = Handler(Looper.getMainLooper())
             val repeatRunnable = object : Runnable {
                 override fun run() {
@@ -100,17 +52,17 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     handler.postDelayed(this, 50)
                 }
             }
-            backspaceBtn.setOnTouchListener { _, event ->
+            btn.setOnTouchListener { _, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        backspaceBtn.isPressed = true
+                        btn.isPressed = true
                         currentInputConnection?.deleteSurroundingText(1, 0)
                         updateBase()
                         handler.postDelayed(repeatRunnable, 400)
                         true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        backspaceBtn.isPressed = false
+                        btn.isPressed = false
                         handler.removeCallbacks(repeatRunnable)
                         true
                     }
@@ -119,41 +71,54 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             }
         }
         
-        setupButton(layout, R.id.key_space) {
+        layout.findViewById<Button>(R.id.key_space)?.setOnClickListener {
             currentInputConnection?.commitText(" ", 1)
             updateBase()
         }
         
-        setupButton(layout, R.id.key_enter) {
+        layout.findViewById<Button>(R.id.key_enter)?.setOnClickListener {
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
             updateBase()
         }
 
-        val shiftBtn = layout.findViewById<Button>(R.id.key_shift)
+        shiftBtn = layout.findViewById(R.id.key_shift)
         shiftBtn?.setOnClickListener {
-            isShifted = !isShifted
-            shiftBtn.isSelected = isShifted
+            if (isSymbolMode) {
+                val now = System.currentTimeMillis()
+                if (now - lastShiftTime < 300) {
+                    isShiftLocked = true
+                    isShifted = true
+                } else {
+                    isShiftLocked = false
+                    isShifted = !isShifted
+                }
+                lastShiftTime = now
+            } else {
+                isLatinMode = !isLatinMode
+            }
             updateKeys()
         }
         
-        val symBtn = layout.findViewById<Button>(R.id.key_sym)
+        symBtn = layout.findViewById(R.id.key_sym)
         symBtn?.setOnClickListener {
+            if (!isSymbolMode) {
+                isLatinSymbolMode = isLatinMode
+            }
             isSymbolMode = !isSymbolMode
-            symBtn.text = if (isSymbolMode) "अल्" else "?123"
+            isShifted = false
+            isShiftLocked = false
             updateKeys()
         }
-        
-        return layout
     }
-    
-    override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         updateBase()
     }
 
     override fun onFinishInput() {
-        super.onFinishInput() 
+        super.onFinishInput()
         currentBase = ""
     }
     
@@ -166,18 +131,16 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         updateBase()
     }
 
-    private fun findAllFlickKeys(view: View, list: MutableList<FlickKeyView>) {
+    private fun findAllFlickKeys(view: View): List<FlickKeyView> {
+        val keys = mutableListOf<FlickKeyView>()
         if (view is FlickKeyView) {
-            list.add(view)
-        } else if (view is android.view.ViewGroup) {
+            keys.add(view)
+        } else if (view is ViewGroup) {
             for (i in 0 until view.childCount) {
-                findAllFlickKeys(view.getChildAt(i), list)
+                keys.addAll(findAllFlickKeys(view.getChildAt(i)))
             }
         }
-    }
-    
-    private fun setupButton(parent: View, id: Int, onClick: () -> Unit) {
-        parent.findViewById<Button>(id)?.setOnClickListener { onClick() }
+        return keys
     }
 
     private fun updateBase() {
@@ -195,79 +158,118 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     }
 
     private fun updateKeys() {
+        updateLabels()
         for (key in allKeys) {
-            val config = configMap[key.id]
-            if (config != null) {
-                if (isSymbolMode) {
-                    val sBase = config.symBase ?: config.base
-                    val sFlick = config.symFlick ?: config.flick
-                    if (isShifted) key.setText(sFlick, sBase)
-                    else key.setText(sBase, sFlick)
-                } else {
-                    when (config.type) {
-                        KeyType.VOWEL -> {
-                            if (currentBase.isNotEmpty()) {
-                                if (isShifted) key.setText(config.matraFlick ?: "", config.matraBase ?: "")
-                                else key.setText(config.matraBase ?: "", config.matraFlick ?: "")
-                            } else {
-                                if (isShifted) key.setText(config.flick, config.base)
-                                else key.setText(config.base, config.flick)
-                            }
-                        }
-                        KeyType.MODIFIER -> {
-                             val prefix = if (currentBase.isNotEmpty()) currentBase else "◌"
-                             if (isShifted) key.setText(prefix + config.flick, prefix + config.base)
-                             else key.setText(prefix + config.base, prefix + config.flick)
-                        }
-                        KeyType.CONSONANT, KeyType.SIMPLE -> {
-                             if (isShifted) key.setText(config.flick, config.base)
-                             else key.setText(config.base, config.flick)
+            val config = configMap[key.id] ?: continue
+            val (baseLabel, flickLabel) = getLabelsForKey(config)
+            key.setText(baseLabel, flickLabel)
+        }
+    }
+    
+    private fun getLabelsForKey(config: KeyConfig): Pair<String, String> {
+        if (isSymbolMode) {
+            var sBase = if (isShifted) (config.sym2Base ?: config.symBase ?: config.base) else (config.symBase ?: config.base)
+            var sFlick = if (isShifted) (config.sym2Flick ?: config.symFlick ?: config.flick) else (config.symFlick ?: config.flick)
+            
+            if (isLatinSymbolMode) {
+                // Swap Devanagari numerals with Arabic if in Latin Symbol mode
+                if (config.symBase != null && config.symFlick != null && 
+                    config.symBase.length == 1 && config.symFlick.length == 1) {
+                    val c1 = config.symBase[0]
+                    val c2 = config.symFlick[0]
+                    if ((c1 in '१'..'९' || c1 == '०') && (c2 in '0'..'9')) {
+                        if (!isShifted) {
+                            sBase = config.symFlick
+                            sFlick = config.symBase
                         }
                     }
                 }
             }
+            return Pair(sBase, sFlick)
+        } else if (isLatinMode) {
+            val lBase = config.latinBase ?: config.base
+            val lFlick = config.latinFlick ?: config.flick
+            return Pair(lBase, lFlick)
+        } else {
+            return when (config.type) {
+                KeyType.VOWEL -> {
+                    if (currentBase.isNotEmpty()) Pair(config.matraBase ?: "", config.matraFlick ?: "")
+                    else Pair(config.base, config.flick)
+                }
+                KeyType.MODIFIER -> {
+                    val prefix = if (currentBase.isNotEmpty()) currentBase else "◌"
+                    Pair(prefix + config.base, prefix + config.flick)
+                }
+                KeyType.CONSONANT, KeyType.SIMPLE -> {
+                    Pair(config.base, config.flick)
+                }
+            }
+        }
+    }
+    
+    private fun updateLabels() {
+        if (isSymbolMode) {
+            symBtn?.text = if (isLatinSymbolMode) "ABC" else "अल्"
+            shiftBtn?.text = if (isShiftLocked) "⇪" else "⇧"
+            shiftBtn?.isSelected = isShifted || isShiftLocked
+        } else {
+            symBtn?.text = if (isLatinMode) "123" else "१२३"
+            shiftBtn?.text = if (isLatinMode) "अ" else "EN"
+            shiftBtn?.isSelected = isLatinMode
         }
     }
 
     override fun onKeyInput(view: FlickKeyView, text: String, isFlick: Boolean) {
         val ic = currentInputConnection ?: return
         val config = configMap[view.id]
-        val effectiveIsFlick = if (isShifted) !isFlick else isFlick
         
         if (config != null) {
-            if (isSymbolMode) {
-                val outText = if (effectiveIsFlick) (config.symFlick ?: config.flick) else (config.symBase ?: config.base)
-                ic.commitText(outText, 1)
-            } else {
-                when (config.type) {
-                    KeyType.VOWEL -> {
-                        if (currentBase.isNotEmpty()) {
-                            val matra = if (effectiveIsFlick) config.matraFlick else config.matraBase
-                            ic.commitText(matra ?: "", 1)
-                        } else {
-                            val vowel = if (effectiveIsFlick) config.flick else config.base
-                            ic.commitText(vowel, 1)
-                        }
-                    }
-                    KeyType.MODIFIER -> {
-                        val mod = if (effectiveIsFlick) config.flick else config.base
-                        ic.commitText(mod, 1)
-                    }
-                    KeyType.CONSONANT, KeyType.SIMPLE -> {
-                        val outText = if (effectiveIsFlick) config.flick else config.base
-                        ic.commitText(outText, 1)
-                    }
-                }
+            val outText = getOutputTextForKey(config, isFlick)
+            ic.commitText(outText, 1)
+            
+            if (isSymbolMode && isShifted && !isShiftLocked) {
+                isShifted = false
+                updateKeys()
             }
         } else {
             ic.commitText(text, 1)
         }
         
-        if (isShifted) {
-            isShifted = false
-            view.rootView.findViewById<Button>(R.id.key_shift)?.isSelected = false
-        }
-        
         updateBase()
+    }
+    
+    private fun getOutputTextForKey(config: KeyConfig, isFlick: Boolean): String {
+        if (isSymbolMode) {
+            if (isShifted) {
+                return if (isFlick) (config.sym2Flick ?: config.symFlick ?: config.flick) else (config.sym2Base ?: config.symBase ?: config.base)
+            } else {
+                val sBase = config.symBase ?: config.base
+                val sFlick = config.symFlick ?: config.flick
+                
+                if (isLatinSymbolMode && config.symBase != null && config.symFlick != null && 
+                    config.symBase.length == 1 && config.symFlick.length == 1) {
+                    val c1 = config.symBase[0]
+                    val c2 = config.symFlick[0]
+                    if ((c1 in '१'..'९' || c1 == '०') && (c2 in '0'..'9')) {
+                        return if (isFlick) config.symBase else config.symFlick
+                    }
+                }
+                return if (isFlick) sFlick else sBase
+            }
+        } else if (isLatinMode) {
+            return if (isFlick) (config.latinFlick ?: config.flick) else (config.latinBase ?: config.base)
+        } else {
+            return when (config.type) {
+                KeyType.VOWEL -> {
+                    if (currentBase.isNotEmpty()) {
+                        if (isFlick) config.matraFlick ?: "" else config.matraBase ?: ""
+                    } else {
+                        if (isFlick) config.flick else config.base
+                    }
+                }
+                KeyType.MODIFIER -> if (isFlick) config.flick else config.base
+                KeyType.CONSONANT, KeyType.SIMPLE -> if (isFlick) config.flick else config.base
+            }
+        }
     }
 }
