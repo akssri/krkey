@@ -41,6 +41,7 @@ class FlickKeyView @JvmOverloads constructor(
 
     interface OnKeyListener {
         fun onKeyInput(view: FlickKeyView, text: String, isFlick: Boolean)
+        fun isGestureEnabled(): Boolean
     }
 
     init {
@@ -140,6 +141,10 @@ class FlickKeyView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (listener?.isGestureEnabled() == true) {
+            return false // Let parent handle it for trail/swipe
+        }
+        
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 startY = event.y
