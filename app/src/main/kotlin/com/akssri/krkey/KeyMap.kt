@@ -2,6 +2,141 @@ package com.akssri.krkey
 
 enum class KeyType { SIMPLE, VOWEL, MODIFIER, CONSONANT }
 
+enum class BrahmiScript(val blockStart: Int, val scriptName: String, val nativeName: String, val iastName: String) {
+    NAGARI(0x0900, "Nagari", "देवनागरी", "Devanāgarī"),
+    KANNADA(0x0C80, "Kannada", "ಕನ್ನಡ", "Kannaḍa"),
+    GRANTHA(0x11300, "Grantha", "𑌗𑍍𑌰𑌨𑍍𑌥", "Grantha"),
+    MALAYALAM(0x0D00, "Malayalam", "മലയാളം", "Malayāḷam"),
+    TAMIL(0x0B80, "Tamil", "தமிழ்", "Tamiḻ"),
+    TELUGU(0x0C00, "Telugu", "తెలుగు", "Telugu"),
+    BENGALI(0x0980, "Bengali", "বাংলা", "Bāṅglā"),
+    GUJRATI(0x0A80, "Gujarati", "ગુજરાતી", "Gujarātī"),
+    ORIYA(0x0B00, "Oriya", "ଓଡ଼ିଆ", "Oṛiā"),
+    GURMUKHI(0x0A00, "Gurmukhi", "ਗੁਰਮੁਖੀ", "Gurmukhī"),
+    SINHALA(0x0D80, "Sinhala", "සිංහල", "Siṃhala"),
+    SHARADA(0x11180, "Sharada", "𑆯𑆳𑆫𑆢𑆳", "Śāradā"),
+    BRAHMI(0x11000, "Brahmi", "𑀩𑁆𑀭𑀸𑀳𑁆𑀫𑀻", "Brāhmī"),
+    SIDDHAM(0x11580, "Siddham", "𑖭𑖰𑖟𑖿𑖠𑖦𑖿", "Siddham")
+}
+
+private fun String.toCodePointList(): List<String> {
+    val list = mutableListOf<String>()
+    var i = 0
+    while (i < this.length) {
+        val cp = this.codePointAt(i)
+        list.add(String(Character.toChars(cp)))
+        i += Character.charCount(cp)
+    }
+    return list
+}
+
+private fun buildMap(src: String, dst: String): Map<Char, String> {
+    val srcList = src.toCharArray().toList()
+    val dstList = dst.toCodePointList()
+    if (srcList.size != dstList.size) {
+        throw IllegalArgumentException("Map strings must have same length! src="+srcList.size+" vs dst="+dstList.size)
+    }
+    return srcList.zip(dstList).toMap()
+}
+
+private val SIDDHAM_MAP = buildMap(
+    "अआइईउऊऋॠऌॡएऐओऔ" +
+    "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह" +
+    "ािीुूृॄॢॣेैोौ" +
+    "ंः़्ॐ।॥",
+    "𑖀𑖁𑖂𑖃𑖄𑖅𑖆𑖇𑖈𑖉𑖊𑖋𑖌𑖍" +
+    "𑖎𑖏𑖐𑖑𑖒𑖓𑖔𑖕𑖖𑖗𑖘𑖙𑖚𑖛𑖜𑖝𑖞𑖟𑖠𑖡𑖢𑖣𑖤𑖥𑖦𑖧𑖨𑖩𑖪𑖫𑖬𑖭𑖮" +
+    "𑖯𑖰𑖱𑖲𑖳𑖴𑖵𑖶𑖷𑖸𑖹𑖺𑖻" +
+    "𑖽𑖾𑖿𑖼𑗁𑗂𑗃"
+)
+
+private val SHARADA_MAP = buildMap(
+    "अआइईउऊऋॠऌॡएऐओऔ" +
+    "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळ" +
+    "ािीुूृॄॢॣेैोौ" +
+    "ंः़्ॐ।॥" +
+    "०१२३४५६७८९",
+    "𑆃𑆄𑆅𑆆𑆇𑆈𑆉𑆊𑆋𑆌𑆍𑆎𑆏𑆐" +
+    "𑆑𑆒𑆓𑆔𑆕𑆖𑆗𑆘𑆙𑆚𑆛𑆜𑆝𑆞𑆟𑆠𑆡𑆢𑆣𑆤𑆥𑆦𑆧𑆨𑆩𑆪𑆫𑆬𑆮𑆯𑆰𑆱𑆲𑆭" +
+    "𑆳𑆴𑆵𑆶𑆷𑆸𑆹𑆺𑆻𑆼𑆽𑆾𑆿" +
+    "𑆁𑆂𑇀𑆀𑇄𑇂𑇃" +
+    "𑇐𑇑𑇒𑇓𑇔𑇕𑇖𑇗𑇘𑇙"
+)
+
+private val BRAHMI_MAP = buildMap(
+    "अआइईउऊऋॠऌॡएऐओऔ" +
+    "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळ" +
+    "ािीुूृॄॢॣेैोौ" +
+    "ंः़्ॐ।॥" +
+    "०१२३४५६७८९",
+    "𑀅𑀆𑀇𑀈𑀉𑀊𑀋𑀌𑀍𑀎𑀏𑀐𑀑𑀒" +
+    "𑀓𑀔𑀕𑀖𑀗𑀘𑀙𑀚𑀛𑀜𑀝𑀞𑀟𑀠𑀡𑀢𑀣𑀤𑀥𑀦𑀧𑀨𑀩𑀪𑀫𑀬𑀭𑀮𑀯𑀰𑀱𑀲𑀳𑀴" +
+    "𑀸𑀹𑀺𑀻𑀼𑀽𑀾𑀿𑁀𑁁𑁂𑁃𑁄" +
+    "𑀁𑀂𑀵्ॐ𑁇𑁈" +
+    "𑁦𑁧𑁨𑁩𑁪𑁫𑁬𑁭𑁮𑁯"
+)
+
+fun translateCodePoint(cp: Int, target: BrahmiScript): String? {
+    if (target == BrahmiScript.NAGARI) return null
+    
+    val char = cp.toChar()
+    when (target) {
+        BrahmiScript.SIDDHAM -> return SIDDHAM_MAP[char]
+        BrahmiScript.SHARADA -> return SHARADA_MAP[char]
+        BrahmiScript.BRAHMI -> return BRAHMI_MAP[char]
+        else -> {}
+    }
+
+    if (cp < 0x0900 || cp > 0x097F) return null
+    val offset = cp - 0x0900
+
+    if (offset == 0x50) { // Devanagari Om
+        return when (target) {
+            BrahmiScript.TAMIL -> "ௐ"
+            BrahmiScript.GUJRATI -> "ૐ"
+            else -> null 
+        }
+    }
+
+    if (offset == 0x64) { // Danda ।
+        return when (target) {
+            BrahmiScript.KANNADA, BrahmiScript.TELUGU, BrahmiScript.MALAYALAM,
+            BrahmiScript.TAMIL, BrahmiScript.GUJRATI, BrahmiScript.SINHALA -> "."
+            else -> null
+        }
+    }
+
+    if (offset == 0x65) { // Double Danda ॥
+        return when (target) {
+            BrahmiScript.KANNADA, BrahmiScript.TELUGU, BrahmiScript.MALAYALAM,
+            BrahmiScript.TAMIL, BrahmiScript.GUJRATI, BrahmiScript.SINHALA -> "."
+            else -> null
+        }
+    }
+    
+    val outCp = target.blockStart + offset
+    val sb = java.lang.StringBuilder()
+    sb.appendCodePoint(outCp)
+    return sb.toString()
+}
+
+fun String.toBrahmiScript(targetScript: BrahmiScript): String {
+    if (targetScript == BrahmiScript.NAGARI) return this
+    val sb = java.lang.StringBuilder()
+    var i = 0
+    while (i < this.length) {
+        val cp = this.codePointAt(i)
+        val translated = translateCodePoint(cp, targetScript)
+        if (translated != null) {
+            sb.append(translated)
+        } else {
+            sb.appendCodePoint(cp)
+        }
+        i += Character.charCount(cp)
+    }
+    return sb.toString()
+}
+
 data class KeyConfig(
     val id: Int,
     val type: KeyType,

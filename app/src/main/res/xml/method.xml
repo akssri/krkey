@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<input-method xmlns:android="http://schemas.android.com/apk/res/android">
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.akssri.krkey.SettingsActivity">
     <subtype
-        android:label="Devanagari (KrKey)"
-        android:imeSubtypeLocale="hi_IN"
+        android:label="@string/subtype_multilingual"
+        android:imeSubtypeLocale="mul"
         android:imeSubtypeMode="keyboard" />
 </input-method>

@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.PopupWindow
 import android.widget.TextView
+import android.graphics.Typeface
 import androidx.core.content.ContextCompat
 
 class FlickKeyView @JvmOverloads constructor(
@@ -110,19 +111,20 @@ class FlickKeyView @JvmOverloads constructor(
     }
     
     private fun showPopup(text: String?) {
-        text ?: return
-        popupTextView?.text = text
-        
-        if (popupWindow?.isShowing != true) {
-            popupWindow?.showAsDropDown(this, 0, -this.height + popupYOffset)
-        }
-        popupWindow?.update()
+        // Disabled
     }
     
     private fun dismissPopup() {
         if (popupWindow?.isShowing == true) {
             popupWindow?.dismiss()
         }
+    }
+
+    fun setTypeface(typeface: Typeface?) {
+        baseTextView.typeface = typeface
+        flickTextView.typeface = typeface
+        hintTextView.typeface = typeface
+        popupTextView?.typeface = typeface
     }
 
     fun setText(base: String, flick: String) {
