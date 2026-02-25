@@ -51,7 +51,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var shiftBtn: Button? = null
     private var symBtn: Button? = null
     private var spaceBtn: Button? = null
-    private var previewText: TextView? = null
     private var candidateContainer: LinearLayout? = null
     private var gestureTrailView: GestureTrailView? = null
     private var wordPredictor: WordPredictor? = null
@@ -78,7 +77,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
         val themedContext = ContextThemeWrapper(this, R.style.Theme_KrKey)
         val layout = LayoutInflater.from(themedContext).inflate(R.layout.keyboard_view, null) as LinearLayout
-        previewText = layout.findViewById(R.id.preview_text)
         candidateContainer = layout.findViewById(R.id.candidate_container)
         gestureTrailView = layout.findViewById(R.id.gesture_trail)
         
@@ -525,13 +523,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     private fun showCandidates(candidates: List<String>) {
         candidateContainer?.let { container ->
-            // Clear only dynamic views, keep preview_text
-            for (i in container.childCount - 1 downTo 0) {
-                val child = container.getChildAt(i)
-                if (child.id != R.id.preview_text) {
-                    container.removeViewAt(i)
-                }
-            }
+            container.removeAllViews()
 
             val isCaps = isSentenceStart()
             for (word in candidates) {
@@ -639,7 +631,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 isShifted = autoCaps
             }
         }
-        updatePreview()
         updateKeys()
     }
 
@@ -656,7 +647,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         } else {
             Typeface.DEFAULT
         }
-        previewText?.typeface = currentTf
         spaceBtn?.typeface = currentTf
         
         for (key in allKeys) {
@@ -665,13 +655,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             val (baseLabel, flickLabel) = getLabelsForKey(config)
             key.setText(baseLabel, flickLabel)
         }
-    }
-    
-    private fun updatePreview() {
-        val ic = currentInputConnection ?: return
-        val before = ic.getTextBeforeCursor(50, 0) ?: ""
-        val after = ic.getTextAfterCursor(50, 0) ?: ""
-        previewText?.text = "$before|$after"
     }
 
     private fun getLabelsForKey(config: KeyConfig): Pair<String, String> {
