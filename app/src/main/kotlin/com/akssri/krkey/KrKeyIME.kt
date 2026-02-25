@@ -56,6 +56,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         btn.isPressed = true
+                        btn.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
                         currentInputConnection?.deleteSurroundingText(1, 0)
                         updateBase()
                         handler.postDelayed(repeatRunnable, 400)
@@ -71,19 +72,22 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             }
         }
         
-        layout.findViewById<Button>(R.id.key_space)?.setOnClickListener {
+        layout.findViewById<Button>(R.id.key_space)?.setOnClickListener { btn ->
+            btn.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
             currentInputConnection?.commitText(" ", 1)
             updateBase()
         }
         
-        layout.findViewById<Button>(R.id.key_enter)?.setOnClickListener {
+        layout.findViewById<Button>(R.id.key_enter)?.setOnClickListener { btn ->
+            btn.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
             updateBase()
         }
 
         shiftBtn = layout.findViewById(R.id.key_shift)
-        shiftBtn?.setOnClickListener {
+        shiftBtn?.setOnClickListener { btn ->
+            btn.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
             if (isSymbolMode) {
                 val now = System.currentTimeMillis()
                 if (now - lastShiftTime < 300) {
@@ -101,7 +105,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
         
         symBtn = layout.findViewById(R.id.key_sym)
-        symBtn?.setOnClickListener {
+        symBtn?.setOnClickListener { btn ->
+            btn.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
             if (!isSymbolMode) {
                 isLatinSymbolMode = isLatinMode
             }

@@ -143,6 +143,7 @@ class FlickKeyView @JvmOverloads constructor(
                 startY = event.y
                 isFlick = false
                 isPressed = true
+                performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
                 showPopup(textBase)
                 return true
             }
