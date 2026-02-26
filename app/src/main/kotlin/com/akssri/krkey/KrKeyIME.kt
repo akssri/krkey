@@ -25,6 +25,8 @@ import com.akssri.krkey.state.InputMode
 import com.akssri.krkey.gesture.GestureDetector
 import com.akssri.krkey.gesture.TouchHandler
 import com.akssri.krkey.location.KeyLocator
+import com.akssri.krkey.ui.CandidateView
+import com.akssri.krkey.prediction.PredictionManager
 import android.graphics.PointF
 
 class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
@@ -34,6 +36,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private lateinit var gestureDetector: GestureDetector
     private lateinit var keyLocator: KeyLocator
     private lateinit var touchHandler: TouchHandler
+
+    // Phase 3: View & Performance
+    private lateinit var predictionManager: PredictionManager
+    private var candidateView: CandidateView? = null
 
     // Old state (keep for backward compatibility during migration)
     private var isLatinMode = false
@@ -46,16 +52,18 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     
     // Logic managers
     private lateinit var userDict: UserDictionaryManager
+
+    // Old predictor code (keep for backward compatibility during migration)
     private var cachedDicts = mutableMapOf<String, List<String>>()
     private var currentDictFile: String? = null
     private var wordPredictor: WordPredictor? = null
-    
+
     // Views
     private var allKeys: List<FlickKeyView> = emptyList()
     private var shiftBtn: Button? = null
     private var symBtn: Button? = null
     private var spaceBtn: Button? = null
-    private var candidateContainer: LinearLayout? = null
+    private var candidateContainer: LinearLayout? = null // Old - will be removed
     private var gestureTrailView: GestureTrailView? = null
     private var candidateBar: View? = null
     
@@ -108,6 +116,18 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         )
     }
 
+    private fun setupCandidateClickListener() {
+        candidateView?.setOnCandidateClickListener { displayWord, originalWord ->
+            currentInputConnection?.commitText(displayWord, 1)
+            userDict.learnWord(originalWord)
+            currentPeckedWord.setLength(0)
+            lastComposedWord = null
+            candidateView?.showCandidates(emptyList())
+            updateBase()
+            updateUI()
+        }
+    }
+
     private fun setupTouchHandlerCallbacks() {
         touchHandler.setCallbacks(object : TouchHandler.Callbacks {
             override fun onKeyPress(key: FlickKeyView, displayText: String) {
@@ -122,9 +142,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 if (isActive) {
                     gestureTrailView?.visibility = View.VISIBLE
                     gestureTrailView?.setPoints(path)
-                    if ((candidateContainer?.childCount ?: 0) > 0) {
-                        showCandidates(emptyList())
-                    }
+                    candidateView?.showCandidates(emptyList())
                 } else {
                     gestureTrailView?.visibility = View.GONE
                     gestureTrailView?.clear()
@@ -180,19 +198,26 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         val themedContext = ContextThemeWrapper(this, R.style.Theme_KrKey)
         val layout = LayoutInflater.from(themedContext).inflate(R.layout.keyboard_view, null) as LinearLayout
         candidateBar = layout.findViewById(R.id.candidate_bar)
-        candidateContainer = layout.findViewById(R.id.candidate_container)
         gestureTrailView = layout.findViewById(R.id.gesture_trail)
         allKeys = findAllFlickKeys(layout)
-        setupSpecialKeys(layout)
+
+        // Initialize Phase 3 components
+        candidateView = layout.findViewById(R.id.candidate_view)
+        val container = layout.findViewById<ViewGroup>(R.id.keyboard_rows)
 
         // Initialize new components (Phase 1)
         gestureDetector = GestureDetector(density)
         keyLocator = KeyLocator(allKeys)
-        val container = layout.findViewById<ViewGroup>(R.id.keyboard_rows)
         keyLocator.initialize(container)
 
         touchHandler = TouchHandler(keyLocator, gestureDetector)
         setupTouchHandlerCallbacks()
+
+        // Initialize Phase 3: PredictionManager
+        predictionManager = PredictionManager(assets, keyLocator, allKeys, container)
+        setupCandidateClickListener()
+
+        setupSpecialKeys(layout)
 
         val rowsContainer = layout.findViewById<View>(R.id.keyboard_rows).parent as View
         rowsContainer.setOnTouchListener { _, event -> handleGlobalTouch(event) }
@@ -514,17 +539,22 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     private fun updatePeckedCandidates() {
         if (isSymbolMode) {
-            showCandidates(emptyList())
+            candidateView?.showCandidates(emptyList())
             return
         }
         if (currentPeckedWord.length < 2) {
-            showCandidates(emptyList())
+            candidateView?.showCandidates(emptyList())
             return
         }
-        
-        ensurePredictor()
-        val matches = wordPredictor?.getPrefixMatches(currentPeckedWord.toString()) ?: emptyList()
-        showCandidates(matches)
+
+        // Use new PredictionManager (Phase 3)
+        predictionManager.ensurePredictor(isLatinMode, currentScript, userDict.getLearnedWords())
+        val matches = predictionManager.getPrefixMatches(currentPeckedWord.toString())
+
+        // Determine capitalization
+        val firstChar = currentPeckedWord.firstOrNull()
+        val shouldCaps = firstChar != null && firstChar.isUpperCase()
+        candidateView?.showCandidates(matches, shouldCaps)
     }
 
     private fun ensurePredictor() {
@@ -588,43 +618,29 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     }
 
     private fun performGestureTyping(): Boolean {
-        ensurePredictor()
-        val res = wordPredictor?.predict(gesturePath) ?: emptyList()
+        // Use new PredictionManager (Phase 3)
+        predictionManager.ensurePredictor(isLatinMode, currentScript, userDict.getLearnedWords())
+        val res = predictionManager.predictGesture(gesturePath)
+
         if (res.isNotEmpty() && res[0].second <= 8.0) {
             val word = res[0].first
             lastComposedWord = word
             var out = word
-            if (isSentenceStart()) out = out.replaceFirstChar { it.uppercase() }
+            val shouldCaps = isSentenceStart()
+            if (shouldCaps) out = out.replaceFirstChar { it.uppercase() }
             currentInputConnection?.setComposingText(out, 1)
-            showCandidates(res.map { it.first })
+            candidateView?.showCandidates(res.map { it.first }, shouldCaps)
             return true
         }
         return false
     }
 
+    // Old showCandidates - kept for backward compatibility, redirects to new CandidateView
     private fun showCandidates(words: List<String>) {
-        candidateContainer?.removeAllViews()
-        
-        // Use manual capitalization from currentPeckedWord if available, else check sentence start
         val firstChar = currentPeckedWord.firstOrNull()
-        val shouldCaps = (firstChar != null && firstChar.isUpperCase()) || (currentPeckedWord.isEmpty() && isSentenceStart())
-        
-        words.forEach { word ->
-            val display = if (shouldCaps) word.replaceFirstChar { it.uppercase() } else word
-            val tv = TextView(ContextThemeWrapper(this, R.style.Theme_KrKey)).apply {
-                text = display; textSize = 16f; setPadding(30, 0, 30, 0); gravity = Gravity.CENTER; setTextColor(ContextCompat.getColor(this@KrKeyIME, R.color.key_text_color)); background = ContextCompat.getDrawable(this@KrKeyIME, R.drawable.key_bg)
-                setOnClickListener {
-                    currentInputConnection?.commitText(display, 1)
-                    userDict.learnWord(word)
-                    currentPeckedWord.setLength(0)
-                    lastComposedWord = null
-                    showCandidates(emptyList())
-                    updateBase()
-                    updateUI()
-                }
-            }
-            candidateContainer?.addView(tv, 0, LinearLayout.LayoutParams(-2, -1).apply { setMargins(8, 4, 8, 4) })
-        }
+        val shouldCaps = (firstChar != null && firstChar.isUpperCase()) ||
+                        (currentPeckedWord.isEmpty() && isSentenceStart())
+        candidateView?.showCandidates(words, shouldCaps)
     }
 
     private fun deleteLastChar() {
