@@ -4,11 +4,85 @@ import android.graphics.PointF
 import android.graphics.Rect
 
 class WordPredictor(
-    private val keys: List<Pair<String, Rect>>,
+    keys: List<Pair<String, Rect>>,
+    private val dictionary: List<String>,
     private val learnedWords: List<Pair<String, Int>> = emptyList()
 ) {
-    
-    private val N = 40 // Points to resample
+
+    private data class IndexedWord(val word: String, val freqIndex: Int)
+
+    private val N = 40
+
+    private val charCenter: Map<Char, PointF> = buildMap {
+        for ((label, rect) in keys) {
+            if (label.length == 1) {
+                put(label[0].lowercaseChar(), PointF(rect.centerX().toFloat(), rect.centerY().toFloat()))
+            }
+        }
+    }
+
+    private val keyUnit: Float = run {
+        if (keys.isEmpty()) return@run 1f
+        val widths = keys.map { it.second.width().toFloat() }
+        val heights = keys.map { it.second.height().toFloat() }
+        ((widths.sum() / widths.size) + (heights.sum() / heights.size)) / 2f
+    }
+
+    private val bigramIndex: Map<Long, List<IndexedWord>> = buildMap<Long, MutableList<IndexedWord>> {
+        for ((index, word) in dictionary.withIndex()) {
+            if (word.length < 2) continue
+            val key = bigramKey(word.first(), word.last())
+            getOrPut(key) { mutableListOf() }.add(IndexedWord(word, index))
+        }
+        for ((word, _) in learnedWords) {
+            if (word.length < 2) continue
+            val key = bigramKey(word.first(), word.last())
+            val list = getOrPut(key) { mutableListOf() }
+            if (list.none { it.word == word }) {
+                list.add(IndexedWord(word, -1))
+            }
+        }
+    }
+
+    private val learnedCountMap: Map<String, Int> = learnedWords.toMap()
+
+    private class TrieNode {
+        val children = mutableMapOf<Char, TrieNode>()
+        val topWords = mutableListOf<String>()
+    }
+
+    private val trieRoot = TrieNode()
+
+    init {
+        for (word in dictionary) {
+            val lowerWord = word.lowercase()
+            var curr = trieRoot
+            for (char in lowerWord) {
+                curr = curr.children.getOrPut(char) { TrieNode() }
+                if (curr.topWords.size < 10 && !curr.topWords.contains(word)) {
+                    curr.topWords.add(word)
+                }
+            }
+        }
+    }
+
+    fun getPrefixMatches(prefix: String): List<String> {
+        if (prefix.length < 2) return emptyList()
+        val lower = prefix.lowercase()
+        val userMatches = learnedWords
+            .filter { it.first.startsWith(lower) }
+            .sortedByDescending { it.second }
+            .map { it.first }
+        
+        var curr = trieRoot
+        for (char in lower) {
+            curr = curr.children[char] ?: return userMatches.take(5)
+        }
+        
+        val dictMatches = curr.topWords
+            
+        return (userMatches + dictMatches).distinct().take(5)
+    }
 
     fun predict(path: List<PointF>): List<Pair<String, Double>> {
         if (path.size < 2) return emptyList()
@@ -16,101 +90,120 @@ class WordPredictor(
         val resampledPath = resample(path, N)
         val pathStart = path.first()
         val pathEnd = path.last()
-        
+        val totalPathLen = pathLength(path)
+
+        val startChars = nearbyChars(pathStart, 1.5f)
+        val endChars = nearbyChars(pathEnd, 1.5f)
+
+        if (startChars.isEmpty() || endChars.isEmpty()) return emptyList()
+
         val candidates = mutableListOf<Pair<String, Double>>()
 
-        // 1. Process Learned Words (Higher Priority)
-        for ((word, count) in learnedWords) {
-            val score = calculateRobustScore(word, resampledPath, pathStart, pathEnd, 0) // Treat as index 0
-            if (score < 1200.0) {
-                // Give learned words a massive boost based on count
-                val boost = 0.6 / (1.0 + Math.log10(count.toDouble() + 1.0))
-                candidates.add(word to score * boost)
-            }
-        }
+        for (sc in startChars) {
+            for (ec in endChars) {
+                val key = bigramKey(sc, ec)
+                val words = bigramIndex[key] ?: continue
+                for (iw in words) {
+                    val rawScore = scoreCandidate(iw.word, iw.freqIndex, resampledPath, pathStart, pathEnd, totalPathLen)
+                    val learnedCount = learnedCountMap[iw.word] ?: 0
+                    
+                    val boostedScore = if (learnedCount > 0) {
+                        rawScore * 0.6 / (1.0 + Math.log10(learnedCount.toDouble() + 1.0))
+                    } else {
+                        rawScore
+                    }
 
-        // 2. Process Static Dictionary
-        for ((index, word) in DICTIONARY.withIndex()) {
-            val score = calculateRobustScore(word, resampledPath, pathStart, pathEnd, index)
-            if (score < 1000.0) { 
-                candidates.add(word to score)
+                    if (boostedScore < 8.0) {
+                        candidates.add(iw.word to boostedScore)
+                    }
+                }
             }
         }
 
         return candidates.sortedBy { it.second }.distinctBy { it.first }.take(5)
     }
 
-    private fun calculateRobustScore(
-        word: String, 
-        resampledPath: List<PointF>, 
-        pathStart: PointF, 
-        pathEnd: PointF, 
-        freqIndex: Int
+    private fun scoreCandidate(
+        word: String,
+        freqIndex: Int,
+        resampledPath: List<PointF>,
+        pathStart: PointF,
+        pathEnd: PointF,
+        actualPathLen: Double
     ): Double {
-        val idealPathPoints = mutableListOf<PointF>()
-        for (char in word) {
-            val keyRect = findKey(char.toString()) ?: return 5000.0
-            idealPathPoints.add(PointF(keyRect.centerX().toFloat(), keyRect.centerY().toFloat()))
+        val idealPoints = mutableListOf<PointF>()
+        for (ch in word) {
+            val center = charCenter[ch] ?: return 100.0
+            idealPoints.add(center)
         }
-        
-        // 1. Terminal Anchoring (CRITICAL)
-        // Check if the gesture starts and ends near the intended keys
-        val startDist = dist(pathStart, idealPathPoints.first())
-        val endDist = dist(pathEnd, idealPathPoints.last())
-        
-        // Prune candidates that are wildly off at the start/end
-        if (startDist > 180 || endDist > 180) return 5000.0
 
-        // 2. Shape Comparison
-        val resampledIdeal = resample(idealPathPoints, N)
+        // Terminal anchoring
+        val startDist = dist(pathStart, idealPoints.first()) / keyUnit
+        val endDist = dist(pathEnd, idealPoints.last()) / keyUnit
+        if (startDist > 2.0 || endDist > 2.0) return 100.0
+
+        // Shape distance
+        val resampledIdeal = resample(idealPoints, N)
         var shapeDist = 0.0
         for (i in 0 until N) {
-            shapeDist += dist(resampledPath[i], resampledIdeal[i])
+            shapeDist += dist(resampledPath[i], resampledIdeal[i]) / keyUnit
         }
         val avgShapeDist = shapeDist / N
 
-        // 3. Order Validation (Check if path passes through middle keys)
+        // Order validation
         var orderScore = 0.0
         var pathIdx = 0
-        for (char in word) {
-            val keyRect = findKey(char.toString())!!
+        for (ch in word) {
+            val center = charCenter[ch] ?: continue
             var foundMatch = false
             var minCharDist = Double.MAX_VALUE
-            
-            // Search ahead in the path for this character
+
             for (i in pathIdx until resampledPath.size) {
-                val d = dist(resampledPath[i], PointF(keyRect.centerX().toFloat(), keyRect.centerY().toFloat()))
+                val d = dist(resampledPath[i], center) / keyUnit
                 if (d < minCharDist) minCharDist = d
-                if (d < 80) { // Found reasonable proximity
+                if (d < 1.2) {
                     foundMatch = true
                     pathIdx = i
                     break
                 }
             }
-            if (!foundMatch) orderScore += 100.0 // Penalty for skipping a required key
+            if (!foundMatch) orderScore += 1.0
             else orderScore += minCharDist * 0.2
         }
 
-        // 4. Combined Weighting
-        // Lower is better. Terminal distances are heavily weighted.
-        val freqWeight = 1.0 + (freqIndex.toDouble() / 3000.0) * 0.3
-        
-        val finalScore = (avgShapeDist * 0.4 + startDist * 0.8 + endDist * 0.8 + orderScore) * freqWeight
-        
-        return finalScore
+        // Length penalty
+        val idealPathLen = pathLength(idealPoints)
+        val lengthPenalty = Math.abs(Math.log((actualPathLen + keyUnit) / (idealPathLen + keyUnit))) * 2.5
+
+        // Frequency weight: 1.0 for top words, up to 1.25 for rare words
+        val freqWeight = if (freqIndex < 0) 1.0 else 1.0 + (freqIndex.toDouble() / dictionary.size.coerceAtLeast(1)) * 0.25
+
+        return (startDist * 1.0 + endDist * 1.0 + avgShapeDist * 0.5 + orderScore * 0.3 + lengthPenalty * 0.4) * freqWeight
+    }
+
+    private fun nearbyChars(point: PointF, radiusKeyUnits: Float): List<Char> {
+        val radius = radiusKeyUnits * keyUnit
+        return charCenter.entries
+            .filter { dist(point, it.value) < radius }
+            .sortedBy { dist(point, it.value) }
+            .map { it.key }
+    }
+
+    private fun bigramKey(first: Char, last: Char): Long {
+        return first.code.toLong() shl 16 or last.code.toLong()
     }
 
     private fun resample(points: List<PointF>, n: Int): List<PointF> {
         val totalLen = pathLength(points)
         if (totalLen == 0.0) return List(n) { points[0] }
-        
+
         val interval = totalLen / (n - 1)
         val result = mutableListOf<PointF>()
         result.add(points[0])
-        
+
         var currentPathIdx = 1
         var accumulatedLen = 0.0
-        
+
         for (i in 1 until n - 1) {
             val targetLen = i * interval
             while (currentPathIdx < points.size) {
@@ -137,10 +230,6 @@ class WordPredictor(
             len += dist(points[i - 1], points[i])
         }
         return len
-    }
-
-    private fun findKey(char: String): Rect? {
-        return keys.find { it.first.equals(char, ignoreCase = true) }?.second
     }
 
     private fun dist(p1: PointF, p2: PointF): Double {

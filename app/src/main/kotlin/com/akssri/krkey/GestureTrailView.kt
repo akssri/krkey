@@ -6,53 +6,82 @@ import android.util.AttributeSet
 import android.view.View
 
 class GestureTrailView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
-    private val path = Path()
+
+    private val trailColor = Color.parseColor("#64B5F6")
+    private val maxStrokeWidth = 10f * resources.displayMetrics.density
+    private val minStrokeWidth = 2f * resources.displayMetrics.density
+    private val fadeDurationMs = 300L
+
     private val paint = Paint().apply {
-        color = Color.parseColor("#64B5F6") // Light blue trail
         style = Paint.Style.STROKE
-        strokeWidth = 12f
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
         isAntiAlias = true
     }
 
-    private val points = mutableListOf<PointF>()
+    private class TrailPoint(val x: Float, val y: Float, val time: Long)
+
+    private val points = mutableListOf<TrailPoint>()
+    private var isActive = false
 
     fun addPoint(x: Float, y: Float) {
-        if (points.isEmpty()) {
-            path.moveTo(x, y)
-        } else {
-            path.lineTo(x, y)
-        }
-        points.add(PointF(x, y))
+        points.add(TrailPoint(x, y, System.currentTimeMillis()))
+        isActive = true
         invalidate()
     }
 
     fun setPoints(newPoints: List<PointF>) {
-        path.reset()
         points.clear()
-        if (newPoints.isEmpty()) {
-            invalidate()
-            return
+        val now = System.currentTimeMillis()
+        for (p in newPoints) {
+            points.add(TrailPoint(p.x, p.y, now))
         }
-        path.moveTo(newPoints[0].x, newPoints[0].y)
-        for (i in 1 until newPoints.size) {
-            path.lineTo(newPoints[i].x, newPoints[i].y)
-        }
-        points.addAll(newPoints)
+        isActive = true
         invalidate()
     }
 
     fun clear() {
-        path.reset()
-        points.clear()
+        isActive = false
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (!path.isEmpty) {
-            canvas.drawPath(path, paint)
+        if (points.size < 2) return
+
+        val now = System.currentTimeMillis()
+        var hasVisible = false
+
+        for (i in 1 until points.size) {
+            val p0 = points[i - 1]
+            val p1 = points[i]
+
+            val age = if (isActive) 0L else now - p1.time
+            if (age > fadeDurationMs) continue
+
+            val fade = if (isActive) {
+                // While drawing: older segments fade based on position
+                val posRatio = i.toFloat() / points.size
+                0.3f + 0.7f * posRatio
+            } else {
+                // After release: time-based fade out
+                1f - (age.toFloat() / fadeDurationMs)
+            }
+
+            val alpha = (fade * 200).toInt().coerceIn(0, 255)
+            if (alpha == 0) continue
+
+            paint.color = Color.argb(alpha, Color.red(trailColor), Color.green(trailColor), Color.blue(trailColor))
+            paint.strokeWidth = minStrokeWidth + (maxStrokeWidth - minStrokeWidth) * fade
+
+            canvas.drawLine(p0.x, p0.y, p1.x, p1.y, paint)
+            hasVisible = true
+        }
+
+        if (!isActive && hasVisible) {
+            postInvalidateOnAnimation()
+        } else if (!isActive && !hasVisible) {
+            points.clear()
         }
     }
 }

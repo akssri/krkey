@@ -11,15 +11,23 @@ class UserDictionaryManager(context: Context) {
     // Word -> Frequency
     private var userWords: MutableMap<String, Int> = mutableMapOf()
 
-    init {
-        load()
+    // Strong reference to listener to prevent GC
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "words") load()
     }
 
-    private fun load() {
+    init {
+        load()
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+    }
+
+    fun load() {
         val json = prefs.getString("words", null)
-        if (json != null) {
+        userWords = if (json != null) {
             val type = object : TypeToken<MutableMap<String, Int>>() {}.type
-            userWords = gson.fromJson(json, type) ?: mutableMapOf()
+            try { gson.fromJson(json, type) ?: mutableMapOf() } catch(e: Exception) { mutableMapOf() }
+        } else {
+            mutableMapOf()
         }
     }
 
@@ -33,7 +41,6 @@ class UserDictionaryManager(context: Context) {
         val lower = word.lowercase()
         userWords[lower] = (userWords[lower] ?: 0) + 1
         if (userWords.size > 1000) {
-            // Simple pruning: remove lowest frequency words if dictionary gets too big
             val minFreq = userWords.values.minOrNull() ?: 0
             val iterator = userWords.iterator()
             while (iterator.hasNext() && userWords.size > 800) {
@@ -49,6 +56,6 @@ class UserDictionaryManager(context: Context) {
 
     fun clear() {
         userWords.clear()
-        prefs.edit().remove("words").apply()
+        prefs.edit().remove("words").commit()
     }
 }
