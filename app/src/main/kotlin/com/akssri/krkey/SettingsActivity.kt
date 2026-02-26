@@ -13,6 +13,10 @@ import androidx.recyclerview.widget.RecyclerView
 
 import androidx.core.content.res.ResourcesCompat
 import android.graphics.Typeface
+import android.view.Menu
+import android.view.MenuItem
+import androidx.appcompat.app.AlertDialog
+import android.widget.Toast
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -22,7 +26,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
-        supportActionBar?.title = "KrKey Scripts"
+        supportActionBar?.title = "कृ-keyboard"
 
         val recyclerView = findViewById<RecyclerView>(R.id.scripts_recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
@@ -35,6 +39,27 @@ class SettingsActivity : AppCompatActivity() {
         )
         
         recyclerView.adapter = ScriptAdapter(typefaces)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.settings_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.action_clear_dictionary) {
+            AlertDialog.Builder(this)
+                .setTitle("गृहीतपदानि लोपय")
+                .setMessage("व्यक्तिगतशब्दकोशात् सर्वे अधीतशब्दाः लोपनीयाः इति खचितं किम्")
+                .setPositiveButton("आम्, लोपय") { _, _ ->
+                    UserDictionaryManager(this).clear()
+                    Toast.makeText(this, "Dictionary cleared", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("मास्तु", null)
+                .show()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
     }
 
     inner class ScriptAdapter(private val typefaces: Map<BrahmiScript, Typeface?>) : RecyclerView.Adapter<ScriptAdapter.ViewHolder>() {

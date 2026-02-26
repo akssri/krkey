@@ -46,4 +46,9 @@ class UserDictionaryManager(context: Context) {
     fun getLearnedWords(): List<Pair<String, Int>> {
         return userWords.toList().sortedByDescending { it.second }
     }
+
+    fun clear() {
+        userWords.clear()
+        prefs.edit().remove("words").apply()
+    }
 }

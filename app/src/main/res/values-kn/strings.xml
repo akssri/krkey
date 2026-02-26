@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ಕೃಕೀ</string>
+    <string name="app_name">कृ-keyboard</string>
+    <string name="ime_name">कृ-keyboard</string>
     <string name="subtype_multilingual">ಬಹುಭಾಷಾ ಟೈಪಿಂಗ್</string>
 </resources>

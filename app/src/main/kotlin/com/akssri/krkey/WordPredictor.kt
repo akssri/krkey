@@ -10,7 +10,7 @@ class WordPredictor(
     
     private val N = 40 // Points to resample
 
-    fun predict(path: List<PointF>): List<String> {
+    fun predict(path: List<PointF>): List<Pair<String, Double>> {
         if (path.size < 2) return emptyList()
 
         val resampledPath = resample(path, N)
@@ -37,7 +37,7 @@ class WordPredictor(
             }
         }
 
-        return candidates.sortedBy { it.second }.map { it.first }.distinct().take(5)
+        return candidates.sortedBy { it.second }.distinctBy { it.first }.take(5)
     }
 
     private fun calculateRobustScore(
