@@ -1,6 +1,8 @@
 package com.akssri.krkey
 
 import android.graphics.Rect
+import com.akssri.krkey.keys.Key
+import com.akssri.krkey.keys.KeyVariants
 
 enum class KeyType { SIMPLE, VOWEL, MODIFIER, CONSONANT }
 
@@ -144,3 +146,38 @@ val keyConfigs = listOf(
 )
 
 val configMap: Map<Int, KeyConfig> = keyConfigs.associateBy { it.id }
+
+// Phase 2: Migration to new Key architecture
+/**
+ * Convert old KeyConfig to new Key.
+ * Backward compatibility layer.
+ */
+fun KeyConfig.toKey(): Key {
+    val variants = KeyVariants(
+        matraBase = this.matraBase,
+        matraFlick = this.matraFlick,
+        symBase = this.symBase,
+        symFlick = this.symFlick,
+        sym2Base = this.sym2Base,
+        sym2Flick = this.sym2Flick,
+        symMatraBase = this.symMatraBase,
+        symMatraFlick = this.symMatraFlick,
+        latinBase = this.latinBase,
+        latinFlick = this.latinFlick,
+        latinSymBase = this.latinSymBase,
+        latinSymFlick = this.latinSymFlick
+    )
+
+    return when (this.type) {
+        KeyType.SIMPLE -> Key.simple(id, base, flick, variants)
+        KeyType.VOWEL -> Key.vowel(id, base, flick, variants)
+        KeyType.MODIFIER -> Key.modifier(id, base, flick, variants)
+        KeyType.CONSONANT -> Key.consonant(id, base, flick, variants)
+    }
+}
+
+/**
+ * New key map using Key architecture.
+ * Use this for new code, old configMap remains for compatibility.
+ */
+val newKeyMap: Map<Int, Key> = keyConfigs.associate { it.id to it.toKey() }
