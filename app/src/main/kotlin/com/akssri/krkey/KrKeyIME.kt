@@ -34,7 +34,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     
     // Logic managers
     private lateinit var userDict: UserDictionaryManager
-    private var staticDict: List<String> = emptyList()
+    private var cachedDicts = mutableMapOf<String, List<String>>()
+    private var currentDictFile: String? = null
     private var wordPredictor: WordPredictor? = null
     
     // Views
@@ -168,6 +169,20 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
     }
 
+    private fun isFlickGesture(path: List<android.graphics.PointF>): Boolean {
+        if (path.size < 2) return false
+        val start = path.first(); val end = path.last()
+        val dist = pathDist(path)
+        return (end.y - start.y) < -15f * density && Math.abs(end.x - start.x) < Math.abs(end.y - start.y) * 0.8 && dist > 10f * density
+    }
+
+    private fun getCleanOutput(cfg: KeyConfig, isFlick: Boolean): String {
+        val (b, f) = cfg.getResolvedStrings(isLatinMode, isSymbolMode, isShifted, isLatinSymbolMode, currentBaseChar, currentScript)
+        val out = if (isFlick) f else b
+        return if (out.startsWith(currentBaseChar) && currentBaseChar.isNotEmpty()) out.substring(currentBaseChar.length)
+               else if (out.startsWith("◌")) out.substring(1) else out
+    }
+
     private fun handleGlobalTouch(event: MotionEvent): Boolean {
         if (!isLatinMode || isSymbolMode) {
             when (event.actionMasked) {
@@ -183,21 +198,19 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     gesturePath.clear(); gesturePath.add(android.graphics.PointF(event.x, event.y))
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    capturedKey?.let {
-                        val cfg = configMap[it.id] ?: return@let
+                    gesturePath.add(android.graphics.PointF(event.x, event.y))
+                    capturedKey?.let { k ->
+                        val cfg = configMap[k.id] ?: return@let
                         val (b, f) = cfg.getResolvedStrings(isLatinMode, isSymbolMode, isShifted, isLatinSymbolMode, currentBaseChar, currentScript)
-                        it.showPopup(if (gesturePath[0].y - event.y > 10f * density) f else b)
+                        k.showPopup(if (isFlickGesture(gesturePath)) f else b)
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     capturedKey?.let {
                         it.isPressed = false; it.dismissPopup()
                         val cfg = configMap[it.id] ?: return@let
-                        val (b, f) = cfg.getResolvedStrings(isLatinMode, isSymbolMode, isShifted, isLatinSymbolMode, currentBaseChar, currentScript)
-                        val isFlick = (gesturePath[0].y - event.y > 15f * density)
-                        val out = if (isFlick) f else b
-                        val clean = if (out.startsWith(currentBaseChar) && currentBaseChar.isNotEmpty()) out.substring(currentBaseChar.length)
-                                    else if (out.startsWith("◌")) out.substring(1) else out
+                        val isFlick = isFlickGesture(gesturePath)
+                        val clean = getCleanOutput(cfg, isFlick)
                         onKeyInput(it, clean, isFlick)
                     }
                     capturedKey = null
@@ -256,11 +269,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     private fun handleFlickOrTap(path: List<android.graphics.PointF>, key: FlickKeyView?) {
         if (path.isEmpty() || key == null) return
-        val start = path.first(); val end = path.last(); val dist = pathDist(path)
-        val isFlick = (end.y - start.y) < -15f * density && Math.abs(end.x - start.x) < Math.abs(end.y - start.y) * 0.8 && dist > 10f * density
         val cfg = configMap[key.id] ?: return
-        val pair = cfg.getResolvedStrings(isLatinMode, isSymbolMode, isShifted, isLatinSymbolMode, currentBaseChar, currentScript)
-        onKeyInput(key, if (isFlick) pair.second else pair.first, isFlick)
+        val isFlick = isFlickGesture(path)
+        val clean = getCleanOutput(cfg, isFlick)
+        onKeyInput(key, clean, isFlick)
     }
 
     private fun updateUI() {
@@ -295,7 +307,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         userDict.load()
-        wordPredictor = null
         currentPeckedWord.setLength(0)
         lastComposedWord = null
         showCandidates(emptyList())
@@ -319,32 +330,30 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     }
 
     private fun ensurePredictor() {
-        if (wordPredictor == null) {
+        // Determine which static dictionary to load
+        val dictFile = if (isLatinMode && !isSymbolMode) {
+            "en_dict.txt"
+        } else if (!isLatinMode && !isSymbolMode) {
+            when (currentScript) {
+                BrahmiScript.KANNADA -> "kn_dict.txt"
+                BrahmiScript.NAGARI -> "sa_dict.txt"
+                else -> null
+            }
+        } else null
+
+        if (wordPredictor == null || dictFile != currentDictFile) {
             val container = gestureTrailView?.rootView?.findViewById<ViewGroup>(R.id.keyboard_rows) ?: return
             
-            // Determine which static dictionary to load
-            val dictFile = if (isLatinMode && !isSymbolMode) {
-                "en_dict.txt"
-            } else if (!isLatinMode && !isSymbolMode) {
-                when (currentScript) {
-                    BrahmiScript.KANNADA -> "kn_dict.txt"
-                    BrahmiScript.NAGARI -> "sa_dict.txt" // Defaulting Nagari to Sanskrit per user preference
-                    else -> null
-                }
-            } else null
-
             val currentStaticDict = if (dictFile != null) {
-                try { assets.open(dictFile).bufferedReader().useLines { it.toList() } } catch (e: Exception) { emptyList() }
+                cachedDicts.getOrPut(dictFile) {
+                    try { assets.open(dictFile).bufferedReader().useLines { it.toList() } } catch (e: Exception) { emptyList() }
+                }
             } else emptyList()
 
             val locs = allKeys.mapNotNull { k ->
                 val cfg = configMap[k.id] ?: return@mapNotNull null
-                
-                // Use latinBase for swipe, but Indic base (translated to current script) for pecking predictions
                 val rawChar = if (isLatinMode) cfg.latinBase else cfg.base
                 if (rawChar == null || rawChar.isEmpty()) return@mapNotNull null
-                
-                // Translate Nagari base to current script (e.g. Kannada) if needed
                 val char = if (isLatinMode) rawChar else rawChar.toBrahmiScript(currentScript)
                 if (char.length != 1) return@mapNotNull null
                 
@@ -352,8 +361,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 container.offsetDescendantRectToMyCoords(k, r)
                 char.lowercase() to r
             }
-            wordPredictor = WordPredictor(locs, currentStaticDict, userDict.getLearnedWords())
+            wordPredictor = WordPredictor(locs, currentStaticDict)
+            currentDictFile = dictFile
         }
+        
+        // Always refresh learned words to catch latest additions
+        wordPredictor?.setLearnedWords(userDict.getLearnedWords())
     }
 
     override fun onKeyInput(view: FlickKeyView, text: String, isFlick: Boolean) {
@@ -392,15 +405,19 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     }
 
     private fun showCandidates(words: List<String>) {
-        candidateContainer?.removeAllViews(); val isCaps = isSentenceStart()
+        candidateContainer?.removeAllViews()
+        
+        // Use manual capitalization from currentPeckedWord if available, else check sentence start
+        val firstChar = currentPeckedWord.firstOrNull()
+        val shouldCaps = (firstChar != null && firstChar.isUpperCase()) || (currentPeckedWord.isEmpty() && isSentenceStart())
+        
         words.forEach { word ->
-            val display = if (isCaps) word.replaceFirstChar { it.uppercase() } else word
+            val display = if (shouldCaps) word.replaceFirstChar { it.uppercase() } else word
             val tv = TextView(ContextThemeWrapper(this, R.style.Theme_KrKey)).apply {
                 text = display; textSize = 16f; setPadding(30, 0, 30, 0); gravity = Gravity.CENTER; setTextColor(ContextCompat.getColor(this@KrKeyIME, R.color.key_text_color)); background = ContextCompat.getDrawable(this@KrKeyIME, R.drawable.key_bg)
                 setOnClickListener {
                     currentInputConnection?.commitText(display, 1)
                     userDict.learnWord(word)
-                    wordPredictor = null
                     currentPeckedWord.setLength(0)
                     lastComposedWord = null
                     showCandidates(emptyList())
@@ -458,7 +475,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
         currentPeckedWord.setLength(0)
         lastComposedWord = null
-        wordPredictor = null
         showCandidates(emptyList())
     }
     private fun isSentenceStart(): Boolean {

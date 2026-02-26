@@ -5,13 +5,15 @@ import android.graphics.Rect
 
 class WordPredictor(
     keys: List<Pair<String, Rect>>,
-    private val dictionary: List<String>,
-    private val learnedWords: List<Pair<String, Int>> = emptyList()
+    private val dictionary: List<String>
 ) {
 
     private data class IndexedWord(val word: String, val freqIndex: Int)
 
     private val N = 40
+    private var learnedWords: List<Pair<String, Int>> = emptyList()
+    private var learnedCountMap: Map<String, Int> = emptyMap()
+    private val userBigramIndex = mutableMapOf<Long, MutableList<IndexedWord>>()
 
     private val charCenter: Map<Char, PointF> = buildMap {
         for ((label, rect) in keys) {
@@ -28,23 +30,13 @@ class WordPredictor(
         ((widths.sum() / widths.size) + (heights.sum() / heights.size)) / 2f
     }
 
-    private val bigramIndex: Map<Long, List<IndexedWord>> = buildMap<Long, MutableList<IndexedWord>> {
+    private val dictBigramIndex: Map<Long, List<IndexedWord>> = buildMap<Long, MutableList<IndexedWord>> {
         for ((index, word) in dictionary.withIndex()) {
             if (word.length < 2) continue
             val key = bigramKey(word.first(), word.last())
             getOrPut(key) { mutableListOf() }.add(IndexedWord(word, index))
         }
-        for ((word, _) in learnedWords) {
-            if (word.length < 2) continue
-            val key = bigramKey(word.first(), word.last())
-            val list = getOrPut(key) { mutableListOf() }
-            if (list.none { it.word == word }) {
-                list.add(IndexedWord(word, -1))
-            }
-        }
     }
-
-    private val learnedCountMap: Map<String, Int> = learnedWords.toMap()
 
     private class TrieNode {
         val children = mutableMapOf<Char, TrieNode>()
@@ -63,6 +55,17 @@ class WordPredictor(
                     curr.topWords.add(word)
                 }
             }
+        }
+    }
+
+    fun setLearnedWords(words: List<Pair<String, Int>>) {
+        learnedWords = words
+        learnedCountMap = words.toMap()
+        userBigramIndex.clear()
+        for ((word, _) in words) {
+            if (word.length < 2) continue
+            val key = bigramKey(word.first(), word.last())
+            userBigramIndex.getOrPut(key) { mutableListOf() }.add(IndexedWord(word, -1))
         }
     }
 
@@ -102,25 +105,46 @@ class WordPredictor(
         for (sc in startChars) {
             for (ec in endChars) {
                 val key = bigramKey(sc, ec)
-                val words = bigramIndex[key] ?: continue
-                for (iw in words) {
-                    val rawScore = scoreCandidate(iw.word, iw.freqIndex, resampledPath, pathStart, pathEnd, totalPathLen)
-                    val learnedCount = learnedCountMap[iw.word] ?: 0
-                    
-                    val boostedScore = if (learnedCount > 0) {
-                        rawScore * 0.6 / (1.0 + Math.log10(learnedCount.toDouble() + 1.0))
-                    } else {
-                        rawScore
+                
+                // Check user words first
+                val uWords = userBigramIndex[key]
+                if (uWords != null) {
+                    for (iw in uWords) {
+                        scoreAndAdd(iw, resampledPath, pathStart, pathEnd, totalPathLen, candidates)
                     }
+                }
 
-                    if (boostedScore < 8.0) {
-                        candidates.add(iw.word to boostedScore)
-                    }
+                // Check dict words
+                val dWords = dictBigramIndex[key] ?: continue
+                for (iw in dWords) {
+                    scoreAndAdd(iw, resampledPath, pathStart, pathEnd, totalPathLen, candidates)
                 }
             }
         }
 
         return candidates.sortedBy { it.second }.distinctBy { it.first }.take(5)
+    }
+
+    private fun scoreAndAdd(
+        iw: IndexedWord,
+        resampledPath: List<PointF>,
+        pathStart: PointF,
+        pathEnd: PointF,
+        totalPathLen: Double,
+        candidates: MutableList<Pair<String, Double>>
+    ) {
+        val rawScore = scoreCandidate(iw.word, iw.freqIndex, resampledPath, pathStart, pathEnd, totalPathLen)
+        val learnedCount = learnedCountMap[iw.word] ?: 0
+        
+        val boostedScore = if (learnedCount > 0) {
+            rawScore * 0.6 / (1.0 + Math.log10(learnedCount.toDouble() + 1.0))
+        } else {
+            rawScore
+        }
+
+        if (boostedScore < 8.0) {
+            candidates.add(iw.word to boostedScore)
+        }
     }
 
     private fun scoreCandidate(
