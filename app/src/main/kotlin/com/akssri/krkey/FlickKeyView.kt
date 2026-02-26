@@ -111,7 +111,7 @@ class FlickKeyView @JvmOverloads constructor(
 	}
     }
 
-    private fun showPopup(text: String?) {
+    internal fun showPopup(text: String?) {
 	if (text == null) return
 	popupTextView?.text = text
 
@@ -126,7 +126,7 @@ class FlickKeyView @JvmOverloads constructor(
 	popupWindow?.update()
     }
 
-    private fun dismissPopup() {
+    internal fun dismissPopup() {
 	if (popupWindow?.isShowing == true) {
 	    popupWindow?.dismiss()
 	}

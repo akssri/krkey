@@ -68,6 +68,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var gesturePath = mutableListOf<android.graphics.PointF>()
     private var gestureStartTime = 0L
     private var activeKey: FlickKeyView? = null
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
     override fun onCreateInputView(): View {
 	try {
@@ -382,8 +383,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 	container.setOnTouchListener { _, event ->
 	    if (!isLatinMode || isSymbolMode) return@setOnTouchListener false
 
-	    when (event.action) {
+	    when (event.actionMasked) {
 		MotionEvent.ACTION_DOWN -> {
+		    activePointerId = event.getPointerId(0)
 		    val key = findKeyAt(event.x, event.y)
 		    gesturePath.clear()
 		    gesturePath.add(android.graphics.PointF(event.x, event.y))
@@ -398,96 +400,159 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 		    activeKey?.let { k ->
 			val config = configMap[k.id]
 			val labels = getLabelsForKey(config!!)
-			k.javaClass.getDeclaredMethod("showPopup", String::class.java).apply {
-			    isAccessible = true
-			    invoke(k, labels.first)
-			}
+			k.showPopup(labels.first)
 		    }
 		    true // Claim the gesture
 		}
-				MotionEvent.ACTION_MOVE -> {
-				    gesturePath.add(android.graphics.PointF(event.x, event.y))
+		MotionEvent.ACTION_POINTER_DOWN -> {
+		    if (!isGestureTyping) {
+			// Commit current key as tap/flick before switching to new finger
+			val finalKey = activeKey
+			activeKey?.isPressed = false
+			activeKey?.dismissPopup()
+			activeKey = null
+			if (finalKey != null && gesturePath.isNotEmpty()) {
+			    handleFlickOrTap(gesturePath, finalKey)
+			}
 
-				    val start = gesturePath.first()
-				    val dx = event.x - start.x
-				    val dy = event.y - start.y
-				    val dist = Math.sqrt(Math.pow(dx.toDouble(), 2.0) + Math.pow(dy.toDouble(), 2.0))
+			// Start tracking the new pointer
+			val newIdx = event.actionIndex
+			activePointerId = event.getPointerId(newIdx)
+			val nx = event.getX(newIdx)
+			val ny = event.getY(newIdx)
+			val key = findKeyAt(nx, ny)
+			gesturePath.clear()
+			gesturePath.add(android.graphics.PointF(nx, ny))
+			gestureStartTime = System.currentTimeMillis()
+			activeKey = key
+			key?.isPressed = true
 
-				    if (!isGestureTyping) {
-					val currentKey = findKeyAt(event.x, event.y)
-					val movedToNewKey = currentKey != null && currentKey != activeKey
-					val isLikelyFlick = dy < 0 && Math.abs(dx) < Math.abs(dy) * 0.5
+			activeKey?.let { k ->
+			    val config = configMap[k.id]
+			    val labels = getLabelsForKey(config!!)
+			    k.showPopup(labels.first)
+			}
+		    }
+		    true
+		}
+		MotionEvent.ACTION_MOVE -> {
+		    val ptrIdx = event.findPointerIndex(activePointerId)
+		    if (ptrIdx < 0) return@setOnTouchListener true
+		    val px = event.getX(ptrIdx)
+		    val py = event.getY(ptrIdx)
 
-					// Show popup feedback during pre-swipe phase
-					activeKey?.let { key ->
-					    val config = configMap[key.id]
-					    val labels = if (dy < -22f * density) getLabelsForKey(config!!).second else getLabelsForKey(config!!).first
-					    key.javaClass.getDeclaredMethod("showPopup", String::class.java).apply {
-						isAccessible = true
-						invoke(key, labels)
-					    }
-					}
+		    gesturePath.add(android.graphics.PointF(px, py))
 
-					// Start swipe decoder
-					// Vertical barrier raised to 200dp to protect long flicks
-					if ((dist > 50f * density && !isLikelyFlick) || movedToNewKey || dist > 200f * density) {
-					    isGestureTyping = true
-					    activeKey?.let { key ->
-						key.isPressed = false
-						key.javaClass.getDeclaredMethod("dismissPopup").apply {
-						    isAccessible = true
-						    invoke(key)
-						}
-					    }
+		    val start = gesturePath.first()
+		    val dx = px - start.x
+		    val dy = py - start.y
+		    val dist = Math.sqrt(Math.pow(dx.toDouble(), 2.0) + Math.pow(dy.toDouble(), 2.0))
 
-					    gestureTrailView?.visibility = View.VISIBLE
-					    gestureTrailView?.setPoints(gesturePath)
+		    if (!isGestureTyping) {
+			val currentKey = findKeyAt(px, py)
+			val movedToNewKey = currentKey != null && currentKey != activeKey
+			    && activeKey != null && Math.abs(dx) > activeKey!!.width * 0.8
+			val isLikelyFlick = dy < 0 && Math.abs(dx) < Math.abs(dy) * 0.8
 
-					    val ic = currentInputConnection
-					    if (isLatinMode && !isSymbolMode && (candidateContainer?.childCount ?: 0) > 1) {
-						ic?.finishComposingText()
-						ic?.commitText(" ", 1)
-						showCandidates(emptyList())
-					    }
-					}
-				    }
+			// Show popup feedback during pre-swipe phase
+			activeKey?.let { key ->
+			    val config = configMap[key.id]
+			    val labels = if (dy < -22f * density) getLabelsForKey(config!!).second else getLabelsForKey(config!!).first
+			    key.showPopup(labels)
+			}
 
-				    if (isGestureTyping) {
-					gestureTrailView?.addPoint(event.x, event.y)
-				    }
-				    true
-				}
-				MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-				    val finalKey = activeKey // This is the START key
-				    activeKey?.isPressed = false
-				    activeKey?.let { key ->
-					key.javaClass.getDeclaredMethod("dismissPopup").apply {
-					    isAccessible = true
-					    invoke(key)
-					}
-				    }
-				    activeKey = null
+			// Start swipe decoder
+			// Require elapsed > 150ms for distance/key-change triggers to avoid fast flicks
+			val elapsed = System.currentTimeMillis() - gestureStartTime
+			if ((dist > 50f * density && !isLikelyFlick && elapsed > 150)
+			    || (movedToNewKey && elapsed > 150)
+			    || dist > 200f * density) {
+			    isGestureTyping = true
+			    activeKey?.let { key ->
+				key.isPressed = false
+				key.dismissPopup()
+			    }
 
-				    if (isGestureTyping) {
-					gestureTrailView?.visibility = View.GONE
-					val success = performGestureTyping()
-					if (!success && event.action == MotionEvent.ACTION_UP) {
-					    // Fallback only if the path is reasonably short (unlikely to be a failed complex swipe)
-					    val start = gesturePath.first()
-					    val end = gesturePath.last()
-					    val dist = Math.sqrt(Math.pow((end.x - start.x).toDouble(), 2.0) + Math.pow((end.y - start.y).toDouble(), 2.0))
-					    if (dist < 120f * density) {
-						handleFlickOrTap(gesturePath, finalKey)
-					    }
-					}
-				    } else if (event.action == MotionEvent.ACTION_UP) {
-					handleFlickOrTap(gesturePath, finalKey)
-				    }
-				    isGestureTyping = false
-				    gestureTrailView?.clear()
-				    gestureTrailView?.visibility = View.GONE
-				    true
-				}
+			    gestureTrailView?.visibility = View.VISIBLE
+			    gestureTrailView?.setPoints(gesturePath)
+
+			    val ic = currentInputConnection
+			    if (isLatinMode && !isSymbolMode && (candidateContainer?.childCount ?: 0) > 1) {
+				ic?.finishComposingText()
+				ic?.commitText(" ", 1)
+				showCandidates(emptyList())
+			    }
+			}
+		    }
+
+		    if (isGestureTyping) {
+			gestureTrailView?.addPoint(px, py)
+		    }
+		    true
+		}
+		MotionEvent.ACTION_POINTER_UP -> {
+		    val liftedId = event.getPointerId(event.actionIndex)
+		    if (liftedId == activePointerId && !isGestureTyping) {
+			// Our tracked finger lifted — commit it as tap/flick
+			val finalKey = activeKey
+			activeKey?.isPressed = false
+			activeKey?.dismissPopup()
+			activeKey = null
+			if (finalKey != null && gesturePath.isNotEmpty()) {
+			    handleFlickOrTap(gesturePath, finalKey)
+			}
+
+			// Switch tracking to the remaining pointer
+			val remaining = if (event.actionIndex == 0) 1 else 0
+			if (remaining < event.pointerCount) {
+			    activePointerId = event.getPointerId(remaining)
+			    val rx = event.getX(remaining)
+			    val ry = event.getY(remaining)
+			    val key = findKeyAt(rx, ry)
+			    gesturePath.clear()
+			    gesturePath.add(android.graphics.PointF(rx, ry))
+			    gestureStartTime = System.currentTimeMillis()
+			    activeKey = key
+			    key?.isPressed = true
+
+			    activeKey?.let { k ->
+				val config = configMap[k.id]
+				val labels = getLabelsForKey(config!!)
+				k.showPopup(labels.first)
+			    }
+			} else {
+			    activePointerId = MotionEvent.INVALID_POINTER_ID
+			}
+		    }
+		    true
+		}
+		MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+		    val finalKey = activeKey // This is the START key
+		    activeKey?.isPressed = false
+		    activeKey?.dismissPopup()
+		    activeKey = null
+		    activePointerId = MotionEvent.INVALID_POINTER_ID
+
+		    if (isGestureTyping) {
+			gestureTrailView?.visibility = View.GONE
+			val success = performGestureTyping()
+			if (!success && event.actionMasked == MotionEvent.ACTION_UP) {
+			    // Fallback only if the path is reasonably short (unlikely to be a failed complex swipe)
+			    val start = gesturePath.first()
+			    val end = gesturePath.last()
+			    val dist = Math.sqrt(Math.pow((end.x - start.x).toDouble(), 2.0) + Math.pow((end.y - start.y).toDouble(), 2.0))
+			    if (dist < 120f * density) {
+				handleFlickOrTap(gesturePath, finalKey)
+			    }
+			}
+		    } else if (event.actionMasked == MotionEvent.ACTION_UP) {
+			handleFlickOrTap(gesturePath, finalKey)
+		    }
+		    isGestureTyping = false
+		    gestureTrailView?.clear()
+		    gestureTrailView?.visibility = View.GONE
+		    true
+		}
 		else -> false
 	    }
 	}
@@ -679,12 +744,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 	    ""
 	}
 
-	if (isLatinMode && !isSymbolMode && !isShiftLocked) {
-	    val autoCaps = isSentenceStart()
-	    if (autoCaps != isShifted) {
-		isShifted = autoCaps
-	    }
-	}
 	updateKeys()
     }
 
