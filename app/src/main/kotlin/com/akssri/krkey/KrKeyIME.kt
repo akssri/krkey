@@ -170,7 +170,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         setupTouchHandlerCallbacks()
 
         // Initialize Phase 3: PredictionManager
-        predictionManager = PredictionManager(assets, keyLocator, allKeys, container)
+        predictionManager = PredictionManager(this, assets, keyLocator, allKeys, container)
         setupCandidateClickListener()
 
         setupSpecialKeys(layout)
@@ -546,6 +546,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         userDict.load()
+
+        // Clear predictor cache to pick up any dictionary preference changes
+        predictionManager.clearCache()
+
         currentPeckedWord.setLength(0)
         lastComposedWord = null
         showCandidates(emptyList())

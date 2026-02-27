@@ -10,6 +10,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.akssri.krkey.getAvailableDictionaries
+import com.akssri.krkey.getDefaultDictionaries
 
 import androidx.core.content.res.ResourcesCompat
 import android.graphics.Typeface
@@ -51,7 +53,7 @@ class SettingsActivity : AppCompatActivity() {
             AlertDialog.Builder(this)
                 .setTitle("गृहीतपदानि लोपय")
                 .setMessage("व्यक्तिगतशब्दकोशात् सर्वे अधीतशब्दाः लोपनीयाः इति खचितं किम्")
-                .setPositiveButton("आम्, लोपय") { _, _ ->
+                .setPositiveButton("आम् लोपय") { _, _ ->
                     UserDictionaryManager(this).clear()
                     Toast.makeText(this, "Dictionary cleared", Toast.LENGTH_SHORT).show()
                 }
@@ -70,6 +72,7 @@ class SettingsActivity : AppCompatActivity() {
             val name: TextView = view.findViewById(R.id.script_name)
             val nativeName: TextView = view.findViewById(R.id.script_native_name)
             val checkbox: CheckBox = view.findViewById(R.id.script_checkbox)
+            val dictContainer: ViewGroup = view.findViewById(R.id.dict_container)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -86,12 +89,12 @@ class SettingsActivity : AppCompatActivity() {
             
             // Default: Nagari is enabled by default if no pref exists
             val isEnabled = prefs.getBoolean("script_${script.name}", script == BrahmiScript.NAGARI)
-            
+
             holder.checkbox.setOnCheckedChangeListener(null) // Clear listener before setting state
             holder.checkbox.isChecked = isEnabled
 
             val updatePref = { checked: Boolean ->
-                val enabledCount = scripts.count { 
+                val enabledCount = scripts.count {
                     if (it == script) checked else prefs.getBoolean("script_${it.name}", it == BrahmiScript.NAGARI)
                 }
                 
@@ -113,6 +116,46 @@ class SettingsActivity : AppCompatActivity() {
             
             holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
                 updatePref(isChecked)
+                // Show/hide dictionary options
+                updateDictionaryUI(holder, script, isChecked)
+            }
+
+            // Initialize dictionary UI
+            updateDictionaryUI(holder, script, isEnabled)
+        }
+
+        private fun updateDictionaryUI(holder: ViewHolder, script: BrahmiScript, isEnabled: Boolean) {
+            holder.dictContainer.removeAllViews()
+
+            if (!isEnabled) {
+                holder.dictContainer.visibility = View.GONE
+                return
+            }
+
+            val dictionaries = script.getAvailableDictionaries()
+            if (dictionaries.isEmpty()) {
+                holder.dictContainer.visibility = View.GONE
+                return
+            }
+
+            holder.dictContainer.visibility = View.VISIBLE
+            val defaults = script.getDefaultDictionaries()
+
+            dictionaries.forEach { (dictFile, displayName) ->
+                val checkbox = CheckBox(holder.itemView.context).apply {
+                    text = displayName
+                    textSize = 14f
+                    setPadding(0, 8, 0, 8)
+
+                    val isChecked = prefs.getBoolean("dict_${script.name}_$dictFile", dictFile in defaults)
+                    setOnCheckedChangeListener(null)
+                    this.isChecked = isChecked
+
+                    setOnCheckedChangeListener { _, checked ->
+                        prefs.edit().putBoolean("dict_${script.name}_$dictFile", checked).apply()
+                    }
+                }
+                holder.dictContainer.addView(checkbox)
             }
         }
 

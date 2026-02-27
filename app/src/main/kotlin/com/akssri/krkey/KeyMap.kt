@@ -23,6 +23,17 @@ enum class BrahmiScript(val blockStart: Int, val scriptName: String, val nativeN
     SIDDHAM(0x11580, "Siddham", "𑖭𑖰𑖟𑖿𑖠𑖦𑖿", "Siddham")
 }
 
+private fun String.toCodePointList(): List<String> {
+    val list = mutableListOf<String>()
+    var i = 0
+    while (i < this.length) {
+        val cp = this.codePointAt(i)
+        list.add(String(Character.toChars(cp)))
+        i += Character.charCount(cp)
+    }
+    return list
+}
+
 data class KeyConfig(
     val id: Int,
     val type: KeyType,
@@ -90,7 +101,137 @@ data class KeyConfig(
     }
 }
 
-private val SIDDHAM_MAP = mapOf('अ' to "𑖀", 'आ' to "𑖁", 'इ' to "𑖂", 'ई' to "𑖃", 'उ' to "𑖄", 'ऊ' to "𑖅", 'ऋ' to "𑖆", 'ॠ' to "𑖇", 'ऌ' to "𑖈", 'ॡ' to "𑖉", 'ए' to "𑖊", 'ऐ' to "𑖋", 'ओ' to "𑖌", 'औ' to "𑖍", 'क' to "𑖎", 'ख' to "𑖏", 'ग' to "𑖐", 'घ' to "𑖑", 'ङ' to "𑖒", 'च' to "𑖓", 'छ' to "𑖔", 'ज' to "𑖕", 'झ' to "𑖖", 'ञ' to "𑖗", 'ट' to "𑖘", 'ठ' to "𑖙", 'ड' to "𑖚", 'ढ' to "𑖛", 'ण' to "𑖜", 'त' to "𑖝", 'थ' to "𑖞", 'द' to "𑖟", 'ध' to "𑖠", 'न' to "𑖡", 'प' to "𑖢", 'फ' to "𑖣", 'ब' to "𑖤", 'भ' to "𑖥", 'म' to "𑖦", 'य' to "𑖧", 'र' to "𑖨", 'ल' to "𑖩", 'व' to "𑖪", 'श' to "𑖫", 'ष' to "𑖬", 'स' to "𑖭", 'ह' to "𑖮", 'ा' to "𑖯", 'ि' to "𑖰", 'ी' to "𑖱", 'ु' to "𑖲", 'ू' to "𑖳", 'ृ' to "𑖴", 'ॄ' to "𑖵", 'ॢ' to "𑖶", 'ॣ' to "𑖷", 'े' to "𑖸", 'ै' to "𑖹", 'ो' to "𑖺", 'ौ' to "𑖻", 'ं' to "𑖽", 'ः' to "𑖾", '्' to "𑖿", '़' to "𑖼", 'ॐ' to "𑗁", '।' to "𑗂", '॥' to "𑗃")
+
+private fun buildMap(src: String, dst: String): Map<Char, String> {
+    val srcList: List<Char> = src.toCharArray().toList()
+    val dstList: List<String> = dst.toCodePointList()
+    if (srcList.size != dstList.size) {
+        throw IllegalArgumentException("Map strings must have same length! src="+srcList.size+" vs dst="+dstList.size)
+    }
+    return srcList.zip(dstList).toMap()
+}
+
+private val SHARADA_MAP = buildMap(
+    "अआइईउऊऋॠऌॡएऐओऔ" +
+    "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळ" +
+    "ािीुूृॄॢॣेैोौ" +
+    "ंँः़्ॐ।॥" +
+    "०१२३४५६७८९",
+    "𑆃𑆄𑆅𑆆𑆇𑆈𑆉𑆊𑆋𑆌𑆍𑆎𑆏𑆐" +
+    "𑆑𑆒𑆓𑆔𑆕𑆖𑆗𑆘𑆙𑆚𑆛𑆜𑆝𑆞𑆟𑆠𑆡𑆢𑆣𑆤𑆥𑆦𑆧𑆨𑆩𑆪𑆫𑆬𑆮𑆯𑆰𑆱𑆲𑆭" +
+    "𑆳𑆴𑆵𑆶𑆷𑆸𑆹𑆺𑆻𑆼𑆽𑆾𑆿" +
+    "𑆁𑆀𑆂𑇀𑆀𑇄𑇂𑇃" +
+    "𑇐𑇑𑇒𑇓𑇔𑇕𑇖𑇗𑇘𑇙"
+)
+
+private val SIDDHAM_MAP = buildMap(
+    "अआइईउऊऋॠऌॡएऐओऔ" +
+    "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह" +
+    "ािीुूृॄॢॣेैोौ" +
+    "ंः़्ॐ।॥",
+    "𑖀𑖁𑖂𑖃𑖄𑖅𑖆𑖇𑖈𑖉𑖊𑖋𑖌𑖍" +
+    "𑖎𑖏𑖐𑖑𑖒𑖓𑖔𑖕𑖖𑖗𑖘𑖙𑖚𑖛𑖜𑖝𑖞𑖟𑖠𑖡𑖢𑖣𑖤𑖥𑖦𑖧𑖨𑖩𑖪𑖫𑖬𑖭𑖮" +
+    "𑖯𑖰𑖱𑖲𑖳𑖴𑖵𑖶𑖷𑖸𑖹𑖺𑖻" +
+    "𑖽𑖾𑖿𑖼𑗁𑗂𑗃"
+)
+
+private val BRAHMI_MAP = buildMap(
+    "अआइईउऊऋॠऌॡएऐओऔ" +
+    "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळ" +
+    "ािीुूृॄॢॣेैोौ" +
+    "ंः़्ॐ।॥" +
+    "०१२३४५६७८९",
+    "𑀅𑀆𑀇𑀈𑀉𑀊𑀋𑀌𑀍𑀎𑀏𑀐𑀑𑀒" +
+    "𑀓𑀔𑀕𑀖𑀗𑀘𑀙𑀚𑀛𑀜𑀝𑀞𑀟𑀠𑀡𑀢𑀣𑀤𑀥𑀦𑀧𑀨𑀩𑀪𑀫𑀬𑀭𑀮𑀯𑀰𑀱𑀲𑀳𑀴" +
+    "𑀸𑀹𑀺𑀻𑀼𑀽𑀾𑀿𑁀𑁁𑁂𑁃𑁄" +
+    "𑀁𑀂𑀵्ॐ𑁇𑁈" +
+    "𑁦𑁧𑁨𑁩𑁪𑁫𑁬𑁭𑁮𑁯"
+)
+
+/**
+ * Get available dictionaries for a script.
+ * Returns list of (file, displayName) pairs.
+ */
+fun BrahmiScript.getAvailableDictionaries(): List<Pair<String, String>> {
+    // Sanskrit transliterated to each script - always available
+    val sanskrit = "sa_dict.txt" to "संस्कृत".toBrahmiScript(this) + " (Sanskrit)"
+
+    // Get language-specific dictionaries for each script
+    val localDicts = when (this) {
+        BrahmiScript.NAGARI -> listOf(
+            "hi_dict.txt" to "हिन्दी (Hindi)",
+            "mr_dict.txt" to "मराठी (Marathi)"
+        )
+        BrahmiScript.KANNADA -> listOf(
+            "kn_dict.txt" to "ಕನ್ನಡ (Kannada)"
+        )
+        BrahmiScript.MALAYALAM -> listOf(
+            "ml_dict.txt" to "മലയാളം (Malayalam)"
+        )
+        BrahmiScript.TAMIL -> listOf(
+            "ta_dict.txt" to "தமிழ் (Tamil)"
+        )
+        BrahmiScript.TELUGU -> listOf(
+            "te_dict.txt" to "తెలుగు (Telugu)"
+        )
+        BrahmiScript.BENGALI -> listOf(
+            "bn_dict.txt" to "বাংলা (Bengali)",
+            "as_dict.txt" to "অসমীয়া (Assamese)"
+        )
+        BrahmiScript.GUJRATI -> listOf(
+            "gu_dict.txt" to "ગુજરાતી (Gujarati)"
+        )
+        BrahmiScript.ORIYA -> listOf(
+            "or_dict.txt" to "ଓଡ଼ିଆ (Odia)"
+        )
+        BrahmiScript.GURMUKHI -> listOf(
+            "pa_dict.txt" to "ਪੰਜਾਬੀ (Punjabi)"
+        )
+        BrahmiScript.SINHALA -> listOf(
+            "si_dict.txt" to "සිංහල (Sinhala)"
+        )
+        BrahmiScript.SHARADA -> listOf(
+            "ks_dict_devanagari.txt" to "𑆑𑆳𑆯𑆴𑆫𑆵 (Kashmiri)"
+        )
+        else -> emptyList()
+    }
+
+    // Return Sanskrit first, followed by all local language dictionaries
+    return listOf(sanskrit) + localDicts
+}
+
+/**
+ * Get default dictionaries for a script.
+ * Returns set of dictionary files enabled by default.
+ */
+fun BrahmiScript.getDefaultDictionaries(): Set<String> {
+    // Sanskrit is always default for all scripts
+    val defaults = mutableSetOf("sa_dict.txt")
+
+    // Also enable primary local language dictionary by default
+    when (this) {
+        BrahmiScript.NAGARI -> {
+            defaults.add("hi_dict.txt")  // Hindi is primary
+            // Marathi available but not default
+        }
+        BrahmiScript.KANNADA -> defaults.add("kn_dict.txt")
+        BrahmiScript.MALAYALAM -> defaults.add("ml_dict.txt")
+        BrahmiScript.TAMIL -> defaults.add("ta_dict.txt")
+        BrahmiScript.TELUGU -> defaults.add("te_dict.txt")
+        BrahmiScript.BENGALI -> {
+            defaults.add("bn_dict.txt")  // Bengali is primary
+            // Assamese available but not default
+        }
+        BrahmiScript.GUJRATI -> defaults.add("gu_dict.txt")
+        BrahmiScript.ORIYA -> defaults.add("or_dict.txt")
+        BrahmiScript.GURMUKHI -> defaults.add("pa_dict.txt")
+        BrahmiScript.SINHALA -> defaults.add("si_dict.txt")
+        BrahmiScript.SHARADA -> defaults.add("ks_dict_devanagari.txt")
+        else -> {} // Sanskrit only for scripts without local dictionaries
+    }
+
+    return defaults
+}
 
 fun String.toBrahmiScript(targetScript: BrahmiScript): String {
     if (targetScript == BrahmiScript.NAGARI) return this
@@ -101,6 +242,8 @@ fun String.toBrahmiScript(targetScript: BrahmiScript): String {
         val char = cp.toChar()
         if (targetScript == BrahmiScript.SIDDHAM && SIDDHAM_MAP.containsKey(char)) {
             sb.append(SIDDHAM_MAP[char])
+        } else if (targetScript == BrahmiScript.SHARADA && SHARADA_MAP.containsKey(char)) {
+            sb.append(SHARADA_MAP[char])
         } else {
             val offset = cp - 0x0900
             if (offset in 0..0x7F) {
