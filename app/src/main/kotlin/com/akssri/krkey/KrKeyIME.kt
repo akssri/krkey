@@ -201,6 +201,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     private fun moveCursor(count: Int) {
         val ic = currentInputConnection ?: return
+
+        // Commit any composing text before moving cursor
+        if (currentPeckedWord.isNotEmpty() || lastComposedWord != null) {
+            commitCurrentInput()
+        }
+
         val absCount = Math.abs(count)
 
         for (i in 0 until absCount) {

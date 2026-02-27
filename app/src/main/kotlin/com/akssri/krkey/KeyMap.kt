@@ -141,7 +141,7 @@ val keyConfigs = listOf(
     KeyConfig(R.id.r3c6, KeyType.MODIFIER, "ः", "ऽ", symBase = "[", symFlick = "&", sym2Base = "β", sym2Flick = "⊂", latinBase = "b", latinFlick = "B"),
     KeyConfig(R.id.r3c7, KeyType.CONSONANT, "च", "छ", symBase = "]", symFlick = "~", sym2Base = "∂", sym2Flick = "⋃", latinBase = "n", latinFlick = "N"),
     KeyConfig(R.id.r3c8, KeyType.CONSONANT, "स", "श", symBase = "₹", symFlick = "$", sym2Base = "μ", sym2Flick = "⋂", latinBase = "m", latinFlick = "M"),
-    KeyConfig(R.id.r4c2, KeyType.SIMPLE, "/", "'", symBase = ",", symFlick = "\"", sym2Base = ",", sym2Flick = "\"", latinBase = "/", latinFlick = "'"),
+    KeyConfig(R.id.r4c2, KeyType.SIMPLE, ",", "'", symBase = ",", symFlick = "\"", sym2Base = ",", sym2Flick = "\"", latinBase = ",", latinFlick = "'"),
     KeyConfig(R.id.r4c4, KeyType.SIMPLE, "।", "?", symBase = ".", symFlick = "!", sym2Base = ".", sym2Flick = "!", latinBase = ".", latinFlick = "?")
 )
 
