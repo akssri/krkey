@@ -1,48 +1,46 @@
 package com.akssri.krkey
 
+import android.content.Context
+import android.graphics.PointF
+import android.graphics.Rect
+import android.graphics.Typeface
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
+import android.view.ContextThemeWrapper
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.TextView
-import android.graphics.Typeface
-import android.view.WindowManager
-import android.content.Intent
-import android.content.Context
-import android.view.ContextThemeWrapper
-import android.view.LayoutInflater
-import android.view.Gravity
-import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
-import com.akssri.krkey.state.KeyboardState
-import com.akssri.krkey.state.InputMode
 import com.akssri.krkey.gesture.GestureDetector
 import com.akssri.krkey.gesture.TouchHandler
 import com.akssri.krkey.location.KeyLocator
-import com.akssri.krkey.ui.CandidateView
 import com.akssri.krkey.prediction.PredictionManager
-import android.graphics.PointF
+import com.akssri.krkey.state.InputMode
+import com.akssri.krkey.state.KeyboardState
+import com.akssri.krkey.ui.CandidateView
 
 class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
-    // New state management (Phase 1)
+    // State
     private var keyboardState = KeyboardState()
+    private val currentPeckedWord = StringBuilder()
+    private var lastGestureWord: String? = null  // Last word inserted by gesture typing (for candidate replacement)
+    private var expectedSelStart: Int = -1
+
+    // Components
     private lateinit var gestureDetector: GestureDetector
     private lateinit var keyLocator: KeyLocator
     private lateinit var touchHandler: TouchHandler
-
-    // Phase 3: View & Performance
     private lateinit var predictionManager: PredictionManager
-    private var candidateView: CandidateView? = null
-
-    // Logic managers
     private lateinit var userDict: UserDictionaryManager
+    private var candidateView: CandidateView? = null
 
     // Views
     private var allKeys: List<FlickKeyView> = emptyList()
@@ -51,48 +49,59 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var spaceBtn: Button? = null
     private var gestureTrailView: GestureTrailView? = null
     private var candidateBar: View? = null
-    
-    // Layout Engine State
+
+    // Layout engine
     private val viewPool = mutableMapOf<Int, View>()
     private var currentLayoutGrid: List<List<Int>>? = null
-    
+
+    // Typefaces for non-standard scripts
     private var siddhamTypeface: Typeface? = null
     private var granthaTypeface: Typeface? = null
     private var sharadaTypeface: Typeface? = null
     private var brahmiTypeface: Typeface? = null
 
-    // Gesture State
+    // Gesture state (Indic flick mode)
+    private var capturedKey: FlickKeyView? = null
+    private val gesturePath = mutableListOf<PointF>()
+
+    // Gesture state (Latin swipe mode)
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var activeKey: FlickKeyView? = null
-    private val gesturePath = mutableListOf<android.graphics.PointF>()
-    private var gestureStartTime = 0L
     private var isGestureTyping = false
     private var lastPopupText: String? = null
     private var density = 1f
-    
-    // --- Gesture Tuning Parameters ---
-    private val FLICK_VERTICAL_THRESHOLD_DP = 15f      // Minimum upward travel to register a flick
-    private val FLICK_VISUAL_THRESHOLD_DP = 10f        // Upward travel required to change the key popup from base to flick
-    private val FLICK_MIN_DISTANCE_DP = 10f            // Minimum total path distance for a flick
-    private val FLICK_VERTICALITY_RATIO = 1.2f         // Allowed horizontal drift ratio (higher = lazier diagonal flicks allowed)
-    
-    private val SWIPE_START_DISTANCE_DP = 50f          // Horizontal distance required to trigger gesture typing
-    private val SWIPE_FORCE_DISTANCE_DP = 100f         // Path distance that forces gesture typing regardless of direction
-    private val SWIPE_NEW_KEY_RATIO = 0.6f             // Ratio of key width travel to trigger gesture typing if not a flick
-    // ---------------------------------
 
-    private var capturedKey: FlickKeyView? = null
-    private val currentPeckedWord = StringBuilder()
-    private var lastComposedWord: String? = null
+    // Gesture tuning
+    private val FLICK_VERTICAL_THRESHOLD_DP = 15f   // Minimum upward travel to register a flick
+    private val FLICK_VISUAL_THRESHOLD_DP = 10f     // Upward travel to change popup from base to flick
+    private val FLICK_MIN_DISTANCE_DP = 10f         // Minimum total path distance for a flick
+    private val FLICK_VERTICALITY_RATIO = 1.2f      // Allowed horizontal drift (higher = lazier diagonal flicks)
+    private val SWIPE_START_DISTANCE_DP = 50f       // Horizontal distance to trigger gesture typing
+    private val SWIPE_FORCE_DISTANCE_DP = 100f      // Path distance that forces gesture typing
+    private val SWIPE_NEW_KEY_RATIO = 0.6f          // Key width ratio to trigger gesture typing
 
     private val prefixable = "़कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळअआइईउऊऋॠऌॡएऐओऔ"
 
     private fun setupCandidateClickListener() {
         candidateView?.setOnCandidateClickListener { displayWord, originalWord ->
-            currentInputConnection?.commitText(displayWord, 1)
+            val ic = currentInputConnection ?: return@setOnCandidateClickListener
+            if (currentPeckedWord.isNotEmpty() && displayWord.startsWith(currentPeckedWord)) {
+                // Prefix match: just append the suffix (avoids delete+rewrite blink)
+                val suffix = displayWord.substring(currentPeckedWord.length)
+                if (suffix.isNotEmpty()) ic.commitText(suffix, 1)
+            } else {
+                // Gesture word or mismatch: full replace
+                val deleteLen = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.length
+                                else (lastGestureWord?.length ?: 0)
+                ic.beginBatchEdit()
+                if (deleteLen > 0) ic.deleteSurroundingText(deleteLen, 0)
+                ic.commitText(displayWord, 1)
+                ic.endBatchEdit()
+            }
             userDict.learnWord(originalWord)
             currentPeckedWord.setLength(0)
-            lastComposedWord = null
+            lastGestureWord = null
+            expectedSelStart = -1
             candidateView?.showCandidates(emptyList())
             updateBase()
             updateUI()
@@ -179,11 +188,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             layout.findViewById<View>(id)?.let { viewPool[id] = it }
         }
 
-        // Initialize Phase 3 components
         candidateView = layout.findViewById(R.id.candidate_view)
         val container = layout.findViewById<ViewGroup>(R.id.keyboard_rows)
 
-        // Initialize new components (Phase 1)
         gestureDetector = GestureDetector(density)
         keyLocator = KeyLocator(allKeys)
         keyLocator.initialize(container)
@@ -191,7 +198,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         touchHandler = TouchHandler(keyLocator, gestureDetector)
         setupTouchHandlerCallbacks()
 
-        // Initialize Phase 3: PredictionManager
         predictionManager = PredictionManager(this, assets, keyLocator, allKeys, container)
         setupCandidateClickListener()
 
@@ -224,8 +230,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private fun moveCursor(count: Int) {
         val ic = currentInputConnection ?: return
 
-        // Commit any composing text before moving cursor
-        if (currentPeckedWord.isNotEmpty() || lastComposedWord != null) {
+        // Commit current word before moving cursor
+        if (currentPeckedWord.isNotEmpty() || lastGestureWord != null) {
             commitCurrentInput()
         }
 
@@ -257,7 +263,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             btn.setOnTouchListener { _, ev ->
                 when (ev.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        btn.isPressed = true; btn.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                        btn.isPressed = true; btn.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         deleteLastChar(); handler.postDelayed(repeat, 400); true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -308,12 +314,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
 
         spaceBtn?.setOnClickListener {
-            it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             commitCurrentInput(); currentInputConnection?.commitText(" ", 1)
             updateBase(); updateUI()
         }
         layout.findViewById<Button>(R.id.key_globe)?.setOnClickListener {
-            it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val prefs = getSharedPreferences("krkey_prefs", Context.MODE_PRIVATE)
             val enabled = BrahmiScript.values().filter {
                 !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
@@ -327,14 +333,14 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             }
         }
         layout.findViewById<Button>(R.id.key_enter)?.setOnClickListener {
-            it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             commitCurrentInput(); currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
             updateBase(); updateUI()
         }
         shiftBtn = layout.findViewById(R.id.key_shift)
         shiftBtn?.setOnClickListener {
-            it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             if (keyboardState.mode.isSymbol()) {
                 keyboardState = keyboardState.toggleShift() // Shift symbol layer
             } else {
@@ -344,14 +350,14 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
         symBtn = layout.findViewById(R.id.key_sym)
         symBtn?.setOnClickListener {
-            it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val wasLatinMode = keyboardState.mode.isLatin()
             keyboardState = keyboardState.toggleSymbol(wasLatinMode)
             updateUI()
         }
     }
 
-    private fun isFlickGesture(path: List<android.graphics.PointF>): Boolean {
+    private fun isFlickGesture(path: List<PointF>): Boolean {
         if (path.size < 2) return false
         val start = path.first(); val end = path.last()
         val dist = pathDist(path)
@@ -391,7 +397,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     capturedKey = findKeyAt(event.x, event.y)
                     capturedKey?.let {
                         it.isPressed = true
-                        it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                        it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         val scriptData = ScriptManager.getScriptData(keyboardState.script)
                         val cfg = scriptData.keyConfigs[it.id] ?: return@let
                         val (b, _) = cfg.getResolvedStrings(
@@ -399,10 +405,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                         )
                         it.showPopup(b)
                     }
-                    gesturePath.clear(); gesturePath.add(android.graphics.PointF(event.x, event.y))
+                    gesturePath.clear(); gesturePath.add(PointF(event.x, event.y))
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    gesturePath.add(android.graphics.PointF(event.x, event.y))
+                    gesturePath.add(PointF(event.x, event.y))
                     capturedKey?.let { k ->
                         val scriptData = ScriptManager.getScriptData(keyboardState.script)
                         val cfg = scriptData.keyConfigs[k.id] ?: return@let
@@ -428,11 +434,11 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                activePointerId = event.getPointerId(0); gesturePath.clear(); gesturePath.add(android.graphics.PointF(event.x, event.y))
-                gestureStartTime = System.currentTimeMillis(); isGestureTyping = false; activeKey = findKeyAt(event.x, event.y)
+                activePointerId = event.getPointerId(0); gesturePath.clear(); gesturePath.add(PointF(event.x, event.y))
+                isGestureTyping = false; activeKey = findKeyAt(event.x, event.y)
                 activeKey?.let { k ->
                     k.isPressed = true
-                    k.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                    k.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     val scriptData = ScriptManager.getScriptData(keyboardState.script)
                     val (b, _) = scriptData.keyConfigs[k.id]!!.getResolvedStrings(
                         keyboardState.mode, keyboardState.currentBaseChar, scriptData
@@ -443,7 +449,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             }
             MotionEvent.ACTION_MOVE -> {
                 val idx = event.findPointerIndex(activePointerId); if (idx < 0) return true
-                val px = event.getX(idx); val py = event.getY(idx); gesturePath.add(android.graphics.PointF(px, py))
+                val px = event.getX(idx); val py = event.getY(idx); gesturePath.add(PointF(px, py))
                 if (!isGestureTyping) {
                     val currentKey = findKeyAt(px, py); val startPos = gesturePath[0]
                     
@@ -497,7 +503,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         return true
     }
 
-    private fun handleFlickOrTap(path: List<android.graphics.PointF>, key: FlickKeyView?) {
+    private fun handleFlickOrTap(path: List<PointF>, key: FlickKeyView?) {
         if (path.isEmpty() || key == null) return
         val scriptData = ScriptManager.getScriptData(keyboardState.script)
         val cfg = scriptData.keyConfigs[key.id] ?: return
@@ -608,17 +614,17 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        
-        // If the composing region was cleared externally (e.g. Firefox X button)
-        // or the user tapped elsewhere, reset our internal buffers.
-        if (candidatesStart == -1 && candidatesEnd == -1) {
-            if (currentPeckedWord.isNotEmpty() || lastComposedWord != null) {
-                currentPeckedWord.setLength(0)
-                lastComposedWord = null
-                showCandidates(emptyList())
-            }
+
+        // Detect cursor jumps (user tapped elsewhere) or text selection to abandon current word
+        val cursorJumped = expectedSelStart != -1 && Math.abs(newSelStart - expectedSelStart) > 2
+        val hasSelection = newSelStart != newSelEnd
+        if (hasSelection || cursorJumped) {
+            currentPeckedWord.setLength(0)
+            lastGestureWord = null
+            expectedSelStart = -1
+            showCandidates(emptyList())
         }
-        
+
         updateBase()
         updateUI()
     }
@@ -644,24 +650,22 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         // Clear predictor cache to pick up any dictionary preference changes
         predictionManager.clearCache()
 
-        currentPeckedWord.setLength(0)
-        lastComposedWord = null
-        showCandidates(emptyList())
+        if (!restarting) {
+            currentPeckedWord.setLength(0)
+            lastGestureWord = null
+            expectedSelStart = -1
+            showCandidates(emptyList())
+        }
         updateBase()
         updateUI()
     }
 
     private fun updatePeckedCandidates() {
-        if (keyboardState.mode.isSymbol()) {
-            candidateView?.showCandidates(emptyList())
-            return
-        }
-        if (currentPeckedWord.length < 2) {
+        if (keyboardState.mode.isSymbol() || currentPeckedWord.length < 2) {
             candidateView?.showCandidates(emptyList())
             return
         }
 
-        // Use PredictionManager
         predictionManager.ensurePredictor(
             keyboardState.mode.isLatin(),
             keyboardState.script,
@@ -676,14 +680,23 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     }
 
     override fun onKeyInput(view: FlickKeyView, text: String, isFlick: Boolean) {
-        if (lastComposedWord != null) {
+        if (lastGestureWord != null) {
             commitCurrentInput()
         }
 
         val isWordChar = !listOf("।", "॥", ".", ",", "!", "?", "/", "'", "\"", "\\", " ").contains(text)
         if (!keyboardState.mode.isSymbol() && isWordChar && text.isNotBlank()) {
-            currentPeckedWord.append(text)
-            currentInputConnection?.setComposingText(currentPeckedWord.toString(), 1)
+            val ic = currentInputConnection ?: return
+            val isFirstChar = currentPeckedWord.isEmpty()
+            val charToAppend = if (isFirstChar && isSentenceStart()) text.replaceFirstChar { it.uppercase() } else text
+
+            if (isFirstChar && expectedSelStart == -1) {
+                expectedSelStart = ic.getTextBeforeCursor(10000, 0)?.length ?: 0
+            }
+
+            currentPeckedWord.append(charToAppend)
+            ic.commitText(charToAppend, 1)
+            expectedSelStart += charToAppend.length
             updatePeckedCandidates()
         } else {
             if (currentPeckedWord.isNotEmpty()) {
@@ -691,12 +704,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             }
             currentInputConnection?.commitText(text, 1)
         }
+        
         updateBase()
         updateUI()
     }
 
     private fun performGestureTyping(): Boolean {
-        // Use PredictionManager
         predictionManager.ensurePredictor(
             keyboardState.mode.isLatin(),
             keyboardState.script,
@@ -707,17 +720,19 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         if (res.isNotEmpty() && res[0].second <= 8.0) {
             val word = res[0].first
             val shouldCaps = isSentenceStart()
-            lastComposedWord = word
+            lastGestureWord = word
             var out = word
             if (shouldCaps) out = out.replaceFirstChar { it.uppercase() }
-            currentInputConnection?.setComposingText(out, 1)
+            
+            currentInputConnection?.commitText(out, 1)
+            expectedSelStart = (currentInputConnection?.getTextBeforeCursor(10000, 0)?.length ?: 0)
+            
             candidateView?.showCandidates(res.map { it.first }, shouldCaps)
             return true
         }
         return false
     }
 
-    // Old showCandidates - kept for backward compatibility, redirects to new CandidateView
     private fun showCandidates(words: List<String>) {
         val firstChar = currentPeckedWord.firstOrNull()
         val shouldCaps = (firstChar != null && firstChar.isUpperCase()) ||
@@ -728,9 +743,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private fun deleteLastChar() {
         val ic = currentInputConnection ?: return
         
-        if (lastComposedWord != null) {
-            ic.commitText("", 1)
-            lastComposedWord = null
+        if (lastGestureWord != null) {
+            ic.deleteSurroundingText(lastGestureWord!!.length, 0)
+            lastGestureWord = null
+            expectedSelStart = -1
             showCandidates(emptyList())
             updateBase()
             updateUI()
@@ -740,11 +756,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         if (!keyboardState.mode.isSymbol() && currentPeckedWord.isNotEmpty()) {
             val len = if (currentPeckedWord.length >= 2 && Character.isSurrogatePair(currentPeckedWord[currentPeckedWord.length - 2], currentPeckedWord[currentPeckedWord.length - 1])) 2 else 1
             currentPeckedWord.delete(currentPeckedWord.length - len, currentPeckedWord.length)
+            ic.deleteSurroundingText(len, 0)
             if (currentPeckedWord.isEmpty()) {
-                ic.commitText("", 1)
                 showCandidates(emptyList())
+                expectedSelStart = -1
             } else {
-                ic.setComposingText(currentPeckedWord.toString(), 1)
+                if (expectedSelStart != -1) expectedSelStart -= len
                 updatePeckedCandidates()
             }
             updateBase()
@@ -758,29 +775,29 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     }
 
     private fun commitCurrentInput() {
-        val ic = currentInputConnection ?: return
         val wordToLearn = if (currentPeckedWord.isNotEmpty()) {
             currentPeckedWord.toString()
         } else {
-            lastComposedWord
+            lastGestureWord
         }
 
-        ic.finishComposingText()
         if (wordToLearn != null && wordToLearn.length > 1) {
             userDict.learnWord(wordToLearn)
         }
         currentPeckedWord.setLength(0)
-        lastComposedWord = null
+        lastGestureWord = null
+        expectedSelStart = -1
         showCandidates(emptyList())
     }
+
     private fun isSentenceStart(): Boolean {
         if (keyboardState.mode.isShifted()) return true
 
         var text = currentInputConnection?.getTextBeforeCursor(50, 0)?.toString() ?: return true
         
-        val composingLen = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.length else (lastComposedWord?.length ?: 0)
-        if (composingLen > 0 && text.length >= composingLen) {
-            text = text.substring(0, text.length - composingLen)
+        val currentWordLen = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.length else (lastGestureWord?.length ?: 0)
+        if (currentWordLen > 0 && text.length >= currentWordLen) {
+            text = text.substring(0, text.length - currentWordLen)
         }
         
         val trimmed = text.trimEnd()
@@ -790,11 +807,26 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         return lastChar == '.' || lastChar == '?' || lastChar == '!' || lastChar == '।' || lastChar == '॥' || lastChar == '\n'
     }
     private fun findKeyAt(x: Float, y: Float): FlickKeyView? {
-        var closest: FlickKeyView? = null; var minDist = Double.MAX_VALUE; val r = android.graphics.Rect(); val container = gestureTrailView?.rootView?.findViewById<ViewGroup>(R.id.keyboard_rows) ?: return null
-        allKeys.forEach { k -> k.getDrawingRect(r); container.offsetDescendantRectToMyCoords(k, r); if (r.contains(x.toInt(), y.toInt())) return k; val d = Math.pow(x - r.centerX().toDouble(), 2.0) + Math.pow(y - r.centerY().toDouble(), 2.0); if (d < minDist) { minDist = d; closest = k } }
+        val container = gestureTrailView?.rootView?.findViewById<ViewGroup>(R.id.keyboard_rows) ?: return null
+        val r = Rect()
+        var closest: FlickKeyView? = null
+        var minDist = Double.MAX_VALUE
+        allKeys.forEach { k ->
+            k.getDrawingRect(r)
+            container.offsetDescendantRectToMyCoords(k, r)
+            if (r.contains(x.toInt(), y.toInt())) return k
+            val d = Math.pow(x - r.centerX().toDouble(), 2.0) + Math.pow(y - r.centerY().toDouble(), 2.0)
+            if (d < minDist) { minDist = d; closest = k }
+        }
         return if (Math.sqrt(minDist) < 150.0) closest else null
     }
-    private fun pathDist(p: List<android.graphics.PointF>): Double { if (p.size < 2) return 0.0; return Math.sqrt(Math.pow((p.last().x - p.first().x).toDouble(), 2.0) + Math.pow((p.last().y - p.first().y).toDouble(), 2.0)) }
+
+    private fun pathDist(p: List<PointF>): Double {
+        if (p.size < 2) return 0.0
+        val dx = (p.last().x - p.first().x).toDouble()
+        val dy = (p.last().y - p.first().y).toDouble()
+        return Math.sqrt(dx * dx + dy * dy)
+    }
 
     override fun onFinishInput() {
         super.onFinishInput()
