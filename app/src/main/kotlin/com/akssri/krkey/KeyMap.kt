@@ -145,19 +145,23 @@ data class KeyConfig(
     val latinBase: String? = null,
     val latinFlick: String? = null,
     val latinSymBase: String? = null,
-    val latinSymFlick: String? = null
+    val latinSymFlick: String? = null,
+    val latinSym2Base: String? = null,
+    val latinSym2Flick: String? = null
 ) {
     fun getResolvedStrings(mode: com.akssri.krkey.state.InputMode, currentBaseChar: String, scriptData: ScriptData): Pair<String, String> {
         val isShifted = mode.isShifted()
         return when (mode) {
-            is com.akssri.krkey.state.InputMode.IndicSymbol, is com.akssri.krkey.state.InputMode.IndicSymbolShifted -> {
-                val bRaw = if (isShifted) (sym2Base ?: symBase ?: base) else (symBase ?: base)
-                val fRaw = if (isShifted) (sym2Flick ?: symFlick ?: flick) else (symFlick ?: flick)
-                Pair(formatIndic(bRaw, currentBaseChar, scriptData), formatIndic(fRaw, currentBaseChar, scriptData))
-            }
-            is com.akssri.krkey.state.InputMode.LatinSymbol -> {
-                val bRaw = latinSymBase ?: symBase ?: base
-                val fRaw = latinSymFlick ?: symFlick ?: flick
+            is com.akssri.krkey.state.InputMode.Symbol, is com.akssri.krkey.state.InputMode.SymbolShifted -> {
+                val fromLatin = mode.isLatin()
+                val bRaw = if (isShifted && fromLatin) (latinSym2Base ?: sym2Base ?: symBase ?: base)
+                           else if (isShifted) (sym2Base ?: symBase ?: base)
+                           else if (fromLatin) (latinSymBase ?: symBase ?: base)
+                           else (symBase ?: base)
+                val fRaw = if (isShifted && fromLatin) (latinSym2Flick ?: sym2Flick ?: symFlick ?: flick)
+                           else if (isShifted) (sym2Flick ?: symFlick ?: flick)
+                           else if (fromLatin) (latinSymFlick ?: symFlick ?: flick)
+                           else (symFlick ?: flick)
                 Pair(formatIndic(bRaw, currentBaseChar, scriptData), formatIndic(fRaw, currentBaseChar, scriptData))
             }
             is com.akssri.krkey.state.InputMode.LatinNormal, is com.akssri.krkey.state.InputMode.LatinShifted -> {

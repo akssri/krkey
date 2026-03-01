@@ -18,8 +18,10 @@ data class KeyboardState(
      */
     fun toggleLanguage(): KeyboardState {
         val newMode = when (mode) {
-            is InputMode.IndicNormal, is InputMode.IndicSymbol, is InputMode.IndicSymbolShifted -> InputMode.LatinNormal
-            is InputMode.LatinNormal, is InputMode.LatinShifted, is InputMode.LatinSymbol -> InputMode.IndicNormal
+            is InputMode.IndicNormal -> InputMode.LatinNormal
+            is InputMode.LatinNormal, is InputMode.LatinShifted -> InputMode.IndicNormal
+            is InputMode.Symbol -> if (mode.fromLatin) InputMode.IndicNormal else InputMode.LatinNormal
+            is InputMode.SymbolShifted -> if (mode.fromLatin) InputMode.IndicNormal else InputMode.LatinNormal
         }
         return copy(mode = newMode, isShiftLocked = false)
     }
@@ -29,11 +31,10 @@ data class KeyboardState(
      */
     fun toggleShift(): KeyboardState {
         val newMode = when (mode) {
-            is InputMode.IndicSymbol -> InputMode.IndicSymbolShifted
-            is InputMode.IndicSymbolShifted -> InputMode.IndicSymbol
+            is InputMode.Symbol -> InputMode.SymbolShifted(mode.fromLatin)
+            is InputMode.SymbolShifted -> InputMode.Symbol(mode.fromLatin)
             is InputMode.LatinNormal -> InputMode.LatinShifted
             is InputMode.LatinShifted -> InputMode.LatinNormal
-            is InputMode.LatinSymbol -> InputMode.LatinSymbol // Usually no shift in Latin symbols, but can add if needed
             is InputMode.IndicNormal -> InputMode.IndicNormal // No shift in Indic base layout
         }
         return copy(mode = newMode, isShiftLocked = false)
@@ -46,11 +47,11 @@ data class KeyboardState(
     fun toggleSymbol(wasLatinMode: Boolean = mode.isLatin()): KeyboardState {
         val newMode = when (mode) {
             is InputMode.IndicNormal, is InputMode.LatinNormal, is InputMode.LatinShifted ->
-                if (wasLatinMode) InputMode.LatinSymbol else InputMode.IndicSymbol
-            is InputMode.IndicSymbol, is InputMode.IndicSymbolShifted ->
-                InputMode.IndicNormal
-            is InputMode.LatinSymbol ->
-                if (wasLatinMode) InputMode.LatinNormal else InputMode.IndicNormal
+                InputMode.Symbol(wasLatinMode)
+            is InputMode.Symbol ->
+                if (mode.fromLatin) InputMode.LatinNormal else InputMode.IndicNormal
+            is InputMode.SymbolShifted ->
+                if (mode.fromLatin) InputMode.LatinNormal else InputMode.IndicNormal
         }
         return copy(mode = newMode, isShiftLocked = false)
     }

@@ -2,6 +2,7 @@ package com.akssri.krkey
 
 import android.content.Context
 import android.graphics.PointF
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
@@ -323,11 +324,21 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             val enabled = BrahmiScript.values().filter {
                 !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
             }
-            if (enabled.size > 1) {
+            
+            commitCurrentInput()
+            if (keyboardState.mode.isLatin()) {
+                // Return to Indic mode
+                keyboardState = keyboardState.copy(mode = InputMode.IndicNormal)
+                updateBase()
+                updateUI()
+            } else if (enabled.size > 1) {
+                // Cycle through Indic scripts
                 val currentScript = keyboardState.script
                 val newScript = enabled[(enabled.indexOf(currentScript) + 1) % enabled.size]
+                
                 keyboardState = keyboardState.withScript(newScript)
                 prefs.edit().putString("last_script", newScript.name).apply()
+                updateBase()
                 updateUI()
             }
         }
@@ -341,9 +352,13 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         shiftBtn?.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             if (keyboardState.mode.isSymbol()) {
-                keyboardState = keyboardState.toggleShift() // Shift symbol layer
+                keyboardState = keyboardState.toggleShift() // Shift symbol layer (Layer 2)
+            } else if (keyboardState.mode.isLatin()) {
+                keyboardState = keyboardState.toggleShift() // Shift Latin (Capitalization)
             } else {
-                keyboardState = keyboardState.toggleLanguage() // Swap EN/Indic
+                commitCurrentInput()
+                keyboardState = keyboardState.toggleLanguage() // Swap Indic -> EN
+                updateBase()
             }
             updateUI()
         }
@@ -389,7 +404,26 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
     }
 
+    private fun findSpecialKeyAt(x: Float, y: Float): View? {
+        val container = gestureTrailView?.rootView?.findViewById<ViewGroup>(R.id.keyboard_rows) ?: return null
+        val r = Rect()
+        val specialIds = listOf(R.id.key_shift, R.id.key_backspace, R.id.key_sym, R.id.key_globe, R.id.key_space, R.id.key_enter)
+        for (id in specialIds) {
+            val v = viewPool[id] ?: continue
+            v.getDrawingRect(r)
+            try {
+                container.offsetDescendantRectToMyCoords(v, r)
+                if (r.contains(x.toInt(), y.toInt())) return v
+            } catch (e: Exception) {}
+        }
+        return null
+    }
+
     private fun handleGlobalTouch(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            if (findSpecialKeyAt(event.x, event.y) != null) return false
+        }
+
         if (!keyboardState.mode.isLatin() || keyboardState.mode.isSymbol()) {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -552,15 +586,15 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             }
         } else Typeface.DEFAULT
 
+        shiftBtn?.text = if (mode.isSymbol() || mode.isLatin()) {
+            if (keyboardState.isShiftLocked) "⇪" else "⇧"
+        } else "EN"
+
         symBtn?.text = if (mode.isSymbol()) {
-            if (mode is InputMode.LatinSymbol) "ABC" else "अल्".toBrahmiScript(script)
+            if (mode.isLatin()) "abc" else "अल्".toBrahmiScript(script)
         } else {
             "१२३".toBrahmiScript(script)
         }
-
-        shiftBtn?.text = if (mode.isSymbol()) {
-            if (keyboardState.isShiftLocked) "⇪" else "⇧"
-        } else "EN"
 
         spaceBtn?.text = if (mode.isLatin() && !mode.isSymbol()) "English" else script.nativeName
         spaceBtn?.typeface = tf
@@ -667,6 +701,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         val isCurrentEnabled = !keyboardState.script.isExperimental && 
                                prefs.getBoolean("script_${keyboardState.script.name}", keyboardState.script == BrahmiScript.DEVANAGARI)
         
+        val oldScript = keyboardState.script
         if (!isCurrentEnabled) {
             val enabled = BrahmiScript.values().filter {
                 !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
@@ -679,7 +714,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         // Clear predictor cache to pick up any dictionary preference changes
         predictionManager.clearCache()
 
-        if (!restarting) {
+        if (!restarting || keyboardState.script != oldScript) {
             currentPeckedWord.setLength(0)
             lastGestureWord = null
             expectedSelStart = -1
@@ -717,15 +752,14 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         if (!keyboardState.mode.isSymbol() && isWordChar && text.isNotBlank()) {
             val ic = currentInputConnection ?: return
             val isFirstChar = currentPeckedWord.isEmpty()
-            val charToAppend = if (isFirstChar && isSentenceStart()) text.replaceFirstChar { it.uppercase() } else text
 
             if (isFirstChar && expectedSelStart == -1) {
                 expectedSelStart = ic.getTextBeforeCursor(10000, 0)?.length ?: 0
             }
 
-            currentPeckedWord.append(charToAppend)
-            ic.commitText(charToAppend, 1)
-            expectedSelStart += charToAppend.length
+            currentPeckedWord.append(text)
+            ic.commitText(text, 1)
+            expectedSelStart += text.length
             updatePeckedCandidates()
         } else {
             if (currentPeckedWord.isNotEmpty()) {

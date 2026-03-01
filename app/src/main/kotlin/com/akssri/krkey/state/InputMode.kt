@@ -7,13 +7,12 @@ package com.akssri.krkey.state
  */
 sealed class InputMode {
     data object IndicNormal : InputMode()
-    data object IndicSymbol : InputMode()
-    data object IndicSymbolShifted : InputMode()
     data object LatinNormal : InputMode()
     data object LatinShifted : InputMode()
-    data object LatinSymbol : InputMode()
+    data class Symbol(val fromLatin: Boolean) : InputMode()
+    data class SymbolShifted(val fromLatin: Boolean) : InputMode()
 
-    fun isLatin() = this is LatinNormal || this is LatinShifted || this is LatinSymbol
-    fun isSymbol() = this is IndicSymbol || this is IndicSymbolShifted || this is LatinSymbol
-    fun isShifted() = this is IndicSymbolShifted || this is LatinShifted
+    fun isLatin() = this is LatinNormal || this is LatinShifted || (this is Symbol && fromLatin) || (this is SymbolShifted && fromLatin)
+    fun isSymbol() = this is Symbol || this is SymbolShifted
+    fun isShifted() = this is LatinShifted || this is SymbolShifted
 }
