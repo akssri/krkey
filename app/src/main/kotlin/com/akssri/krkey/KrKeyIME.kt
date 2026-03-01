@@ -602,7 +602,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         val scriptData = ScriptManager.getScriptData(keyboardState.script)
         
         // Check if layout needs rebuilding (e.g. switching to/from Tamil)
-        val targetLayout = if (mode.isLatin()) baseLayout else scriptData.layout
+        val targetLayout = scriptData.layoutFor(mode)
         if (currentLayoutGrid != targetLayout) {
             rebuildKeyboardGrid(targetLayout)
         }

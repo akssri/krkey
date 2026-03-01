@@ -134,6 +134,10 @@ fun String.toBrahmiScript(targetScript: BrahmiScript): String {
 // LAYOUT & RESOLUTION ENGINE
 // -------------------------------------------------------------------
 
+enum class LayerType {
+    INDIC, SYMBOL, SYMBOL2, LATIN, LATIN_SYMBOL, LATIN_SYMBOL2
+}
+
 data class KeyConfig(
     val id: Int,
     val base: String,
@@ -204,18 +208,37 @@ data class KeyConfig(
 
         return raw
     }
+
+    fun hasContentFor(layer: LayerType): Boolean {
+        val (b, f) = when (layer) {
+            LayerType.INDIC -> base to flick
+            LayerType.SYMBOL -> (symBase ?: base) to (symFlick ?: flick)
+            LayerType.SYMBOL2 -> (sym2Base ?: symBase ?: base) to (sym2Flick ?: symFlick ?: flick)
+            LayerType.LATIN -> (latinBase ?: base) to (latinFlick ?: flick)
+            LayerType.LATIN_SYMBOL -> (latinSymBase ?: symBase ?: base) to (latinSymFlick ?: symFlick ?: flick)
+            LayerType.LATIN_SYMBOL2 -> (latinSym2Base ?: sym2Base ?: symBase ?: base) to (latinSym2Flick ?: sym2Flick ?: symFlick ?: flick)
+        }
+        return b.isNotEmpty() || f.isNotEmpty()
+    }
 }
 
 data class ScriptData(
     val script: BrahmiScript,
     val vowels: List<String>,
-    val matras: List<String>,      
+    val matras: List<String>,
     val consonants: Set<String>,
     val modifiers: Set<String>,
     val keyConfigs: Map<Int, KeyConfig>,
     val vowelToMatraMap: Map<String, String>,
-    val layout: List<List<Int>>
-)
+    val layouts: Map<LayerType, List<List<Int>>>
+) {
+    fun layoutFor(mode: com.akssri.krkey.state.InputMode): List<List<Int>> = when (mode) {
+        is com.akssri.krkey.state.InputMode.LatinNormal, is com.akssri.krkey.state.InputMode.LatinShifted -> layouts[LayerType.LATIN]!!
+        is com.akssri.krkey.state.InputMode.Symbol -> layouts[if (mode.fromLatin) LayerType.LATIN_SYMBOL else LayerType.SYMBOL]!!
+        is com.akssri.krkey.state.InputMode.SymbolShifted -> layouts[if (mode.fromLatin) LayerType.LATIN_SYMBOL2 else LayerType.SYMBOL2]!!
+        is com.akssri.krkey.state.InputMode.IndicNormal -> layouts[LayerType.INDIC]!!
+    }
+}
 
 private val DEVA_VOWELS = listOf("अ", "आ", "इ", "ई", "उ", "ऊ", " उ", "ऋ", "ॠ", "ऌ", "ॡ", "ए", "ऐ", "ऎ", "ओ", "औ", "ऒ")
 private val DEVA_MATRAS = listOf("्", "ा", "ि", "ी", "ु", "ू", "ु", "ृ", "ॄ", "ॢ", "ॣ", "े", "ै", "ॆ", "ो", "ौ", "ॊ")
@@ -265,6 +288,13 @@ object ScriptManager {
 
     init {
         val devaVowelToMatra = DEVA_VOWELS.zip(DEVA_MATRAS).toMap()
+        val specialKeys = setOf(R.id.key_shift, R.id.key_backspace, R.id.key_sym, R.id.key_globe, R.id.key_space, R.id.key_enter)
+        val devaLayouts = LayerType.values().associateWith { layer ->
+            val validIds = baseKeyConfigs.filter { it.hasContentFor(layer) }.map { it.id }.toSet()
+            baseLayout.map { row ->
+                row.filter { id -> specialKeys.contains(id) || validIds.contains(id) }
+            }
+        }
         cache[BrahmiScript.DEVANAGARI] = ScriptData(
             script = BrahmiScript.DEVANAGARI,
             vowels = DEVA_VOWELS,
@@ -273,7 +303,7 @@ object ScriptManager {
             modifiers = DEVA_MODIFIERS,
             keyConfigs = baseKeyConfigs.associateBy { it.id },
             vowelToMatraMap = devaVowelToMatra,
-            layout = baseLayout
+            layouts = devaLayouts
         )
     }
 
@@ -300,12 +330,14 @@ object ScriptManager {
         }
 
         val finalKeys = applyLayoutOverrides(script, translatedKeys)
-        
-        // Dynamically strip out empty keys from the layout
-        val validKeyIds = finalKeys.filter { it.base.isNotEmpty() || it.flick.isNotEmpty() }.map { it.id }.toSet()
+
+        // Compute per-layer layouts: each layer independently determines which keys are visible
         val specialKeys = setOf(R.id.key_shift, R.id.key_backspace, R.id.key_sym, R.id.key_globe, R.id.key_space, R.id.key_enter)
-        val dynamicLayout = baseLayout.map { row ->
-            row.filter { id -> specialKeys.contains(id) || validKeyIds.contains(id) }
+        val layouts = LayerType.values().associateWith { layer ->
+            val validIds = finalKeys.filter { it.hasContentFor(layer) }.map { it.id }.toSet()
+            baseLayout.map { row ->
+                row.filter { id -> specialKeys.contains(id) || validIds.contains(id) }
+            }
         }
 
         return ScriptData(
@@ -316,7 +348,7 @@ object ScriptManager {
             modifiers = localModifiers,
             keyConfigs = finalKeys.associateBy { it.id },
             vowelToMatraMap = localVowelToMatra,
-            layout = dynamicLayout
+            layouts = layouts
         )
     }
 
