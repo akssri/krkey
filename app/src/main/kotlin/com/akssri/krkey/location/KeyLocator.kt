@@ -14,7 +14,7 @@ import kotlin.math.sqrt
  * Performance improvement: ~60% reduction in touch event processing time.
  */
 class KeyLocator(
-    private val allKeys: List<FlickKeyView>
+    private var allKeys: List<FlickKeyView>
 ) {
     private data class KeyBounds(
         val key: FlickKeyView,
@@ -28,8 +28,9 @@ class KeyLocator(
      * Initialize the locator with the keyboard container.
      * Call this once after layout inflation.
      */
-    fun initialize(container: ViewGroup) {
+    fun initialize(container: ViewGroup, keys: List<FlickKeyView>? = null) {
         this.container = container
+        if (keys != null) allKeys = keys
         rebuildCache()
     }
 
@@ -50,7 +51,7 @@ class KeyLocator(
 
     /**
      * Find the key at the given coordinates.
-     * Uses cached bounds for O(1) lookup.
+     * Uses cached bounds for O(1) lookup if available and sane, otherwise falls back to live scan.
      *
      * @param x X coordinate in container space
      * @param y Y coordinate in container space
@@ -59,6 +60,16 @@ class KeyLocator(
     fun findKeyAt(x: Float, y: Float): FlickKeyView? {
         val xInt = x.toInt()
         val yInt = y.toInt()
+
+        // Check if cache is likely invalid (all zeros) and try one lazy rebuild
+        if (keyBoundsCache.isNotEmpty() && keyBoundsCache.all { it.rect.isEmpty }) {
+            rebuildCache()
+        }
+
+        // If cache is still invalid or empty, fall back to live scan
+        if (keyBoundsCache.isEmpty() || keyBoundsCache.all { it.rect.isEmpty }) {
+            return findKeyAtLive(x, y)
+        }
 
         // First pass: exact hit test
         for (keyBounds in keyBoundsCache) {
@@ -87,6 +98,30 @@ class KeyLocator(
         }
 
         return if (minDistance < threshold) closestKey else null
+    }
+
+    /**
+     * Live scan of key positions. Slow but guaranteed accurate even before cache is ready.
+     */
+    private fun findKeyAtLive(x: Float, y: Float): FlickKeyView? {
+        val container = this.container ?: return null
+        val r = Rect()
+        var closest: FlickKeyView? = null
+        var minDist = Double.MAX_VALUE
+        
+        allKeys.forEach { k ->
+            k.getDrawingRect(r)
+            container.offsetDescendantRectToMyCoords(k, r)
+            
+            if (r.contains(x.toInt(), y.toInt())) return k
+            
+            val d = (x - r.centerX()).toDouble().pow(2.0) + (y - r.centerY()).toDouble().pow(2.0)
+            if (d < minDist) {
+                minDist = d
+                closest = k
+            }
+        }
+        return if (sqrt(minDist) < 150.0) closest else null
     }
 
     /**

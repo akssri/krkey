@@ -2,7 +2,6 @@ package com.akssri.krkey
 
 import android.content.Context
 import android.graphics.PointF
-import android.graphics.Rect
 import android.graphics.Typeface
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
@@ -394,7 +393,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         if (!keyboardState.mode.isLatin() || keyboardState.mode.isSymbol()) {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    capturedKey = findKeyAt(event.x, event.y)
+                    capturedKey = keyLocator.findKeyAt(event.x, event.y)
                     capturedKey?.let {
                         it.isPressed = true
                         it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -434,13 +433,17 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                activePointerId = event.getPointerId(0); gesturePath.clear(); gesturePath.add(PointF(event.x, event.y))
-                isGestureTyping = false; activeKey = findKeyAt(event.x, event.y)
+                activePointerId = event.getPointerId(0)
+                gesturePath.clear()
+                gesturePath.add(PointF(event.x, event.y))
+                isGestureTyping = false
+                activeKey = keyLocator.findKeyAt(event.x, event.y)
                 activeKey?.let { k ->
                     k.isPressed = true
                     k.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     val scriptData = ScriptManager.getScriptData(keyboardState.script)
-                    val (b, _) = scriptData.keyConfigs[k.id]!!.getResolvedStrings(
+                    val cfg = scriptData.keyConfigs[k.id] ?: return@let
+                    val (b, _) = cfg.getResolvedStrings(
                         keyboardState.mode, keyboardState.currentBaseChar, scriptData
                     )
                     lastPopupText = b
@@ -448,10 +451,16 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 }
             }
             MotionEvent.ACTION_MOVE -> {
-                val idx = event.findPointerIndex(activePointerId); if (idx < 0) return true
-                val px = event.getX(idx); val py = event.getY(idx); gesturePath.add(PointF(px, py))
+                val idx = event.findPointerIndex(activePointerId)
+                if (idx < 0) return true
+                
+                val px = event.getX(idx)
+                val py = event.getY(idx)
+                gesturePath.add(PointF(px, py))
+                
                 if (!isGestureTyping) {
-                    val currentKey = findKeyAt(px, py); val startPos = gesturePath[0]
+                    val currentKey = keyLocator.findKeyAt(px, py)
+                    val startPos = gesturePath[0]
                     
                     val verticalDist = startPos.y - py // Positive is upward
                     val horizontalDist = Math.abs(px - startPos.x)
@@ -461,7 +470,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     
                     activeKey?.let { k ->
                         val scriptData = ScriptManager.getScriptData(keyboardState.script)
-                        val (b, f) = scriptData.keyConfigs[k.id]!!.getResolvedStrings(
+                        val cfg = scriptData.keyConfigs[k.id] ?: return@let
+                        val (b, f) = cfg.getResolvedStrings(
                             keyboardState.mode, keyboardState.currentBaseChar, scriptData
                         )
                         val text = if (verticalDist > FLICK_VISUAL_THRESHOLD_DP * density) f else b
@@ -481,7 +491,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                             currentInputConnection?.commitText(" ", 1)
                         }
 
-                        activeKey?.let { it.isPressed = false; it.dismissPopup() }
+                        activeKey?.let { 
+                            it.isPressed = false
+                            it.dismissPopup() 
+                        }
                         gestureTrailView?.visibility = View.VISIBLE
                         gestureTrailView?.setPoints(gesturePath)
                         showCandidates(emptyList())
@@ -492,12 +505,23 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val finalKey = activeKey; activeKey?.let { it.isPressed = false; it.dismissPopup() }; activeKey = null; activePointerId = MotionEvent.INVALID_POINTER_ID
+                val finalKey = activeKey
+                activeKey?.let { 
+                    it.isPressed = false
+                    it.dismissPopup() 
+                }
+                activeKey = null
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+                
                 if (isGestureTyping) {
                     gestureTrailView?.visibility = View.GONE
                     performGestureTyping()
-                } else if (event.actionMasked == MotionEvent.ACTION_UP) handleFlickOrTap(gesturePath, finalKey)
-                isGestureTyping = false; gestureTrailView?.clear()
+                } else if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    handleFlickOrTap(gesturePath, finalKey)
+                }
+                
+                isGestureTyping = false
+                gestureTrailView?.clear()
             }
         }
         return true
@@ -592,8 +616,13 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             container.addView(rowLayout)
         }
         
-        // Update the global key locator cache since the views moved physically
-        keyLocator.initialize(container)
+        // Update allKeys to only contain FlickKeyViews in the current layout
+        val activeKeyIds = layout.flatten().toSet()
+        allKeys = viewPool.values.filterIsInstance<FlickKeyView>().filter { it.id in activeKeyIds }
+        keyLocator.initialize(container, allKeys)
+        container.post {
+            keyLocator.rebuildCache()
+        }
         currentLayoutGrid = layout
     }
 
@@ -795,7 +824,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
         var text = currentInputConnection?.getTextBeforeCursor(50, 0)?.toString() ?: return true
         
-        val currentWordLen = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.length else (lastGestureWord?.length ?: 0)
+        val currentWordLen = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.length else 0
         if (currentWordLen > 0 && text.length >= currentWordLen) {
             text = text.substring(0, text.length - currentWordLen)
         }
@@ -805,20 +834,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         
         val lastChar = trimmed.last()
         return lastChar == '.' || lastChar == '?' || lastChar == '!' || lastChar == '।' || lastChar == '॥' || lastChar == '\n'
-    }
-    private fun findKeyAt(x: Float, y: Float): FlickKeyView? {
-        val container = gestureTrailView?.rootView?.findViewById<ViewGroup>(R.id.keyboard_rows) ?: return null
-        val r = Rect()
-        var closest: FlickKeyView? = null
-        var minDist = Double.MAX_VALUE
-        allKeys.forEach { k ->
-            k.getDrawingRect(r)
-            container.offsetDescendantRectToMyCoords(k, r)
-            if (r.contains(x.toInt(), y.toInt())) return k
-            val d = Math.pow(x - r.centerX().toDouble(), 2.0) + Math.pow(y - r.centerY().toDouble(), 2.0)
-            if (d < minDist) { minDist = d; closest = k }
-        }
-        return if (Math.sqrt(minDist) < 150.0) closest else null
     }
 
     private fun pathDist(p: List<PointF>): Double {
@@ -833,6 +848,4 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         showCandidates(emptyList())
         keyboardState = keyboardState.clearBaseChar()
     }
-
-    override fun isGestureEnabled() = keyboardState.mode.isLatin() && !keyboardState.mode.isSymbol()
 }

@@ -318,15 +318,15 @@ object ScriptManager {
 
     private fun applyLayoutOverrides(script: BrahmiScript, keys: List<KeyConfig>): List<KeyConfig> {
         return when (script) {
-            BrahmiScript.KANNADA, BrahmiScript.TELUGU, BrahmiScript.MALAYALAM, BrahmiScript.SINHALA -> {
-                keys.map { k ->
-                    when (k.id) {
-                        R.id.r1c1 -> k.copy(base = k.flick, flick = k.base) // O / Short O
-                        R.id.r2c2 -> k.copy(base = k.flick, flick = k.base) // E / Short E
-                        else -> k
-                    }
-                }
-            }
+            // BrahmiScript.KANNADA, BrahmiScript.TELUGU, BrahmiScript.MALAYALAM, BrahmiScript.SINHALA -> {
+            //     keys.map { k ->
+            //         when (k.id) {
+            //             R.id.r1c1 -> k.copy(base = k.flick, flick = k.base) // O / Short O
+            //             R.id.r2c2 -> k.copy(base = k.flick, flick = k.base) // E / Short E
+            //             else -> k
+            //         }
+            //     }
+            // }
             BrahmiScript.TAMIL -> {
                 keys.map { k ->
                     when (k.id) {
