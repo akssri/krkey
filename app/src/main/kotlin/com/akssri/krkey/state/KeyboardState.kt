@@ -76,24 +76,4 @@ data class KeyboardState(
         return copy(currentBaseChar = "")
     }
 
-    // Legacy compatibility helpers - convert to old boolean flags
-    fun toOldFlags() = OldFlags(
-        isLatinMode = mode.isLatin(),
-        isSymbolMode = mode.isSymbol(),
-        isLatinSymbolMode = mode is InputMode.LatinSymbol,
-        isShifted = mode.isShifted(),
-        isShiftLocked = isShiftLocked,
-        currentScript = script,
-        currentBaseChar = currentBaseChar
-    )
-
-    data class OldFlags(
-        val isLatinMode: Boolean,
-        val isSymbolMode: Boolean,
-        val isLatinSymbolMode: Boolean,
-        val isShifted: Boolean,
-        val isShiftLocked: Boolean,
-        val currentScript: BrahmiScript,
-        val currentBaseChar: String
-    )
 }

@@ -4,11 +4,11 @@ import android.graphics.Rect
 
 enum class BrahmiScript(val scriptName: String, val nativeName: String, val iastName: String, val isExperimental: Boolean = false) {
     DEVANAGARI("Devanagari", "देवनागरी", "Devanāgarī"),
-    KANNADA("Kannada", "ಕನ್ನಡ", "Kannaḍa"),
-    GRANTHA("Grantha", "𑌗𑍍𑌰𑌨𑍍𑌥", "Grantha"),
+    KANNADA("Kannada", "ಕನ್ನಡ", "Kannaḍa"),    
     MALAYALAM("Malayalam", "മലയാളം", "Malayāḷam"),
     TAMIL("Tamil", "தமிழ்", "Tamiḻ"),
     TELUGU("Telugu", "తెలుగు", "Telugu"),
+    GRANTHA("Grantha", "𑌗𑍍𑌰𑌨𑍍𑌥", "Grantha", true),
     BENGALI("Bengali", "বাংলা", "Bāṅglā", true),
     GUJARATI("Gujarati", "ગુજરાતી", "Gujarātī", true),
     ORIYA("Oriya", "ଓଡ଼ିଆ", "Oṛiā", true),

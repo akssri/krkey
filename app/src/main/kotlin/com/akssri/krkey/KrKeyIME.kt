@@ -572,6 +572,20 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         super.onStartInputView(info, restarting)
         userDict.load()
 
+        // Validate that the current script is still enabled (user might have disabled it in Settings)
+        val prefs = getSharedPreferences("krkey_prefs", Context.MODE_PRIVATE)
+        val isCurrentEnabled = !keyboardState.script.isExperimental && 
+                               prefs.getBoolean("script_${keyboardState.script.name}", keyboardState.script == BrahmiScript.DEVANAGARI)
+        
+        if (!isCurrentEnabled) {
+            val enabled = BrahmiScript.values().filter {
+                !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
+            }
+            val newScript = if (enabled.isNotEmpty()) enabled.first() else BrahmiScript.DEVANAGARI
+            keyboardState = keyboardState.withScript(newScript)
+            prefs.edit().putString("last_script", newScript.name).apply()
+        }
+
         // Clear predictor cache to pick up any dictionary preference changes
         predictionManager.clearCache()
 
