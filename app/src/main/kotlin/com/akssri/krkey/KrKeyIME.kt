@@ -602,7 +602,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
         // Determine capitalization
         val firstChar = currentPeckedWord.firstOrNull()
-        val shouldCaps = firstChar != null && firstChar.isUpperCase()
+        val shouldCaps = (firstChar != null && firstChar.isUpperCase()) || isSentenceStart()
         candidateView?.showCandidates(matches, shouldCaps)
     }
 
@@ -613,11 +613,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
         val isWordChar = !listOf("।", "॥", ".", ",", "!", "?", "/", "'", "\"", "\\", " ").contains(text)
         if (!keyboardState.mode.isSymbol() && isWordChar && text.isNotBlank()) {
-            if (currentPeckedWord.isEmpty() && isSentenceStart()) {
-                currentPeckedWord.append(text.replaceFirstChar { it.uppercase() })
-            } else {
-                currentPeckedWord.append(text)
-            }
+            currentPeckedWord.append(text)
             currentInputConnection?.setComposingText(currentPeckedWord.toString(), 1)
             updatePeckedCandidates()
         } else {
