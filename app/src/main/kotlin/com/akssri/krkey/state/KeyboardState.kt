@@ -14,18 +14,27 @@ data class KeyboardState(
     val isShiftLocked: Boolean = false
 ) {
     /**
-     * Toggle shift behavior based on current mode:
-     * - In symbol mode: toggles between normal and shifted symbol layers
-     * - In Indic mode: toggles to Latin mode
-     * - In Latin mode: toggles back to Indic mode
+     * Toggles between Indic and Latin normal modes.
+     */
+    fun toggleLanguage(): KeyboardState {
+        val newMode = when (mode) {
+            is InputMode.IndicNormal, is InputMode.IndicSymbol, is InputMode.IndicSymbolShifted -> InputMode.LatinNormal
+            is InputMode.LatinNormal, is InputMode.LatinShifted, is InputMode.LatinSymbol -> InputMode.IndicNormal
+        }
+        return copy(mode = newMode, isShiftLocked = false)
+    }
+
+    /**
+     * Toggles shift behavior (capitalization in Latin, secondary symbols in Symbol mode).
      */
     fun toggleShift(): KeyboardState {
         val newMode = when (mode) {
             is InputMode.IndicSymbol -> InputMode.IndicSymbolShifted
             is InputMode.IndicSymbolShifted -> InputMode.IndicSymbol
-            is InputMode.IndicNormal -> InputMode.LatinNormal
-            is InputMode.LatinNormal, is InputMode.LatinShifted -> InputMode.IndicNormal
-            is InputMode.LatinSymbol -> mode // No shift change in Latin symbol mode
+            is InputMode.LatinNormal -> InputMode.LatinShifted
+            is InputMode.LatinShifted -> InputMode.LatinNormal
+            is InputMode.LatinSymbol -> InputMode.LatinSymbol // Usually no shift in Latin symbols, but can add if needed
+            is InputMode.IndicNormal -> InputMode.IndicNormal // No shift in Indic base layout
         }
         return copy(mode = newMode, isShiftLocked = false)
     }

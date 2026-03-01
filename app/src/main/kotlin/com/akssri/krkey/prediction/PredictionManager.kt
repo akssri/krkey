@@ -8,7 +8,7 @@ import android.view.ViewGroup
 import com.akssri.krkey.BrahmiScript
 import com.akssri.krkey.FlickKeyView
 import com.akssri.krkey.WordPredictor
-import com.akssri.krkey.configMap
+import com.akssri.krkey.ScriptManager
 import com.akssri.krkey.getAvailableDictionaries
 import com.akssri.krkey.getDefaultDictionaries
 import com.akssri.krkey.toBrahmiScript
@@ -130,13 +130,11 @@ class PredictionManager(
         }.distinct() // Remove duplicates
 
         // Build key locations for gesture typing
+        val scriptData = ScriptManager.getScriptData(script)
         val locs = allKeys.mapNotNull { k ->
-            val cfg = configMap[k.id] ?: return@mapNotNull null
-            val rawChar = if (isLatin) cfg.latinBase else cfg.base
-            if (rawChar == null || rawChar.isEmpty()) return@mapNotNull null
-
-            val char = if (isLatin) rawChar else rawChar.toBrahmiScript(script)
-            if (char.length != 1) return@mapNotNull null
+            val cfg = scriptData.keyConfigs[k.id] ?: return@mapNotNull null
+            val char = if (isLatin) (cfg.latinBase ?: cfg.base) else cfg.base
+            if (char.isEmpty()) return@mapNotNull null
 
             val r = Rect()
             k.getDrawingRect(r)

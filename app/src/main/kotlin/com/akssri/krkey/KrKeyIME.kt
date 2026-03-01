@@ -111,17 +111,17 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             }
 
             override fun getKeyDisplayText(key: FlickKeyView, isFlickActive: Boolean): Pair<String, String> {
-                val cfg = configMap[key.id] ?: return Pair("", "")
-                val flags = keyboardState.toOldFlags()
+                val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                val cfg = scriptData.keyConfigs[key.id] ?: return Pair("", "")
                 val (base, flick) = cfg.getResolvedStrings(
-                    flags.isLatinMode, flags.isSymbolMode, flags.isShifted,
-                    flags.isLatinSymbolMode, flags.currentBaseChar, flags.currentScript
+                    keyboardState.mode, keyboardState.currentBaseChar, scriptData
                 )
                 return Pair(base, flick)
             }
 
             override fun getKeyCommitText(key: FlickKeyView, isFlick: Boolean): String {
-                val cfg = configMap[key.id] ?: return ""
+                val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                val cfg = scriptData.keyConfigs[key.id] ?: return ""
                 return getCleanOutput(cfg, isFlick)
             }
 
@@ -313,7 +313,11 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         shiftBtn = layout.findViewById(R.id.key_shift)
         shiftBtn?.setOnClickListener {
             it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-            keyboardState = keyboardState.toggleShift()
+            if (keyboardState.mode.isSymbol()) {
+                keyboardState = keyboardState.toggleShift() // Shift symbol layer
+            } else {
+                keyboardState = keyboardState.toggleLanguage() // Swap EN/Indic
+            }
             updateUI()
         }
         symBtn = layout.findViewById(R.id.key_sym)
@@ -333,10 +337,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     }
 
     private fun getCleanOutput(cfg: KeyConfig, isFlick: Boolean): String {
-        val flags = keyboardState.toOldFlags()
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
         val (b, f) = cfg.getResolvedStrings(
-            flags.isLatinMode, flags.isSymbolMode, flags.isShifted,
-            flags.isLatinSymbolMode, flags.currentBaseChar, flags.currentScript
+            keyboardState.mode, keyboardState.currentBaseChar, scriptData
         )
         val out = if (isFlick) f else b
         val currentBaseChar = keyboardState.currentBaseChar
@@ -361,11 +364,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     capturedKey?.let {
                         it.isPressed = true
                         it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-                        val cfg = configMap[it.id] ?: return@let
-                        val flags = keyboardState.toOldFlags()
+                        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                        val cfg = scriptData.keyConfigs[it.id] ?: return@let
                         val (b, _) = cfg.getResolvedStrings(
-                            flags.isLatinMode, flags.isSymbolMode, flags.isShifted,
-                            flags.isLatinSymbolMode, flags.currentBaseChar, flags.currentScript
+                            keyboardState.mode, keyboardState.currentBaseChar, scriptData
                         )
                         it.showPopup(b)
                     }
@@ -374,11 +376,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 MotionEvent.ACTION_MOVE -> {
                     gesturePath.add(android.graphics.PointF(event.x, event.y))
                     capturedKey?.let { k ->
-                        val cfg = configMap[k.id] ?: return@let
-                        val flags = keyboardState.toOldFlags()
+                        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                        val cfg = scriptData.keyConfigs[k.id] ?: return@let
                         val (b, f) = cfg.getResolvedStrings(
-                            flags.isLatinMode, flags.isSymbolMode, flags.isShifted,
-                            flags.isLatinSymbolMode, flags.currentBaseChar, flags.currentScript
+                            keyboardState.mode, keyboardState.currentBaseChar, scriptData
                         )
                         k.showPopup(if (isFlickGesture(gesturePath)) f else b)
                     }
@@ -386,7 +387,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     capturedKey?.let {
                         it.isPressed = false; it.dismissPopup()
-                        val cfg = configMap[it.id] ?: return@let
+                        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                        val cfg = scriptData.keyConfigs[it.id] ?: return@let
                         val isFlick = isFlickGesture(gesturePath)
                         val clean = getCleanOutput(cfg, isFlick)
                         onKeyInput(it, clean, isFlick)
@@ -403,10 +405,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 activeKey?.let { k ->
                     k.isPressed = true
                     k.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-                    val flags = keyboardState.toOldFlags()
-                    val (b, _) = configMap[k.id]!!.getResolvedStrings(
-                        flags.isLatinMode, flags.isSymbolMode, flags.isShifted,
-                        flags.isLatinSymbolMode, flags.currentBaseChar, flags.currentScript
+                    val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                    val (b, _) = scriptData.keyConfigs[k.id]!!.getResolvedStrings(
+                        keyboardState.mode, keyboardState.currentBaseChar, scriptData
                     )
                     lastPopupText = b
                     k.showPopup(b)
@@ -420,10 +421,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     val movedToNewKey = currentKey != null && currentKey != activeKey && Math.abs(px - startPos.x) > (activeKey?.width ?: 0) * 0.6
                     val isLikelyFlick = (py - startPos.y) < 0 && Math.abs(px - startPos.x) < Math.abs(py - startPos.y) * 0.8
                     activeKey?.let { k ->
-                        val flags = keyboardState.toOldFlags()
-                        val (b, f) = configMap[k.id]!!.getResolvedStrings(
-                            flags.isLatinMode, flags.isSymbolMode, flags.isShifted,
-                            flags.isLatinSymbolMode, flags.currentBaseChar, flags.currentScript
+                        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                        val (b, f) = scriptData.keyConfigs[k.id]!!.getResolvedStrings(
+                            keyboardState.mode, keyboardState.currentBaseChar, scriptData
                         )
                         val text = if (py - startPos.y < -10f * density) f else b
                         if (text != lastPopupText) {
@@ -464,7 +464,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     private fun handleFlickOrTap(path: List<android.graphics.PointF>, key: FlickKeyView?) {
         if (path.isEmpty() || key == null) return
-        val cfg = configMap[key.id] ?: return
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+        val cfg = scriptData.keyConfigs[key.id] ?: return
         val isFlick = isFlickGesture(path)
         val clean = getCleanOutput(cfg, isFlick)
         onKeyInput(key, clean, isFlick)
@@ -473,7 +474,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private fun updateUI() {
         val mode = keyboardState.mode
         val script = keyboardState.script
-        val flags = keyboardState.toOldFlags()
 
         candidateBar?.visibility = if (!mode.isSymbol()) View.VISIBLE else View.GONE
 
@@ -500,12 +500,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         spaceBtn?.text = if (mode.isLatin() && !mode.isSymbol()) "English" else script.nativeName
         spaceBtn?.typeface = tf
 
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
         allKeys.forEach { k ->
             k.setTypeface(tf)
-            val cfg = configMap[k.id] ?: return@forEach
+            val cfg = scriptData.keyConfigs[k.id] ?: return@forEach
             val (b, f) = cfg.getResolvedStrings(
-                flags.isLatinMode, flags.isSymbolMode, flags.isShifted,
-                flags.isLatinSymbolMode, flags.currentBaseChar, flags.currentScript
+                keyboardState.mode, keyboardState.currentBaseChar, scriptData
             )
             k.setVisualState(b, f, false)
         }
@@ -588,7 +588,11 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
         val isWordChar = !listOf("।", "॥", ".", ",", "!", "?", "/", "'", "\"", "\\", " ").contains(text)
         if (!keyboardState.mode.isSymbol() && isWordChar && text.isNotBlank()) {
-            currentPeckedWord.append(text)
+            if (currentPeckedWord.isEmpty() && isSentenceStart()) {
+                currentPeckedWord.append(text.replaceFirstChar { it.uppercase() })
+            } else {
+                currentPeckedWord.append(text)
+            }
             currentInputConnection?.setComposingText(currentPeckedWord.toString(), 1)
             updatePeckedCandidates()
         } else {
@@ -612,9 +616,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
         if (res.isNotEmpty() && res[0].second <= 8.0) {
             val word = res[0].first
+            val shouldCaps = isSentenceStart()
             lastComposedWord = word
             var out = word
-            val shouldCaps = isSentenceStart()
             if (shouldCaps) out = out.replaceFirstChar { it.uppercase() }
             currentInputConnection?.setComposingText(out, 1)
             candidateView?.showCandidates(res.map { it.first }, shouldCaps)
@@ -680,6 +684,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         showCandidates(emptyList())
     }
     private fun isSentenceStart(): Boolean {
+        if (keyboardState.mode.isShifted()) return true
+
         var text = currentInputConnection?.getTextBeforeCursor(50, 0)?.toString() ?: return true
         
         val composingLen = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.length else (lastComposedWord?.length ?: 0)
@@ -687,9 +693,11 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             text = text.substring(0, text.length - composingLen)
         }
         
-        if (text.isEmpty()) return true
         val trimmed = text.trimEnd()
-        return trimmed.isEmpty() || ".?! \n".contains(trimmed.last()) 
+        if (trimmed.isEmpty()) return true
+        
+        val lastChar = trimmed.last()
+        return lastChar == '.' || lastChar == '?' || lastChar == '!' || lastChar == '।' || lastChar == '॥' || lastChar == '\n'
     }
     private fun findKeyAt(x: Float, y: Float): FlickKeyView? {
         var closest: FlickKeyView? = null; var minDist = Double.MAX_VALUE; val r = android.graphics.Rect(); val container = gestureTrailView?.rootView?.findViewById<ViewGroup>(R.id.keyboard_rows) ?: return null
