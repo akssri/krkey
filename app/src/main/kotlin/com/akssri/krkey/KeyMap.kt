@@ -209,7 +209,8 @@ data class ScriptData(
     val consonants: Set<String>,
     val modifiers: Set<String>,
     val keyConfigs: Map<Int, KeyConfig>,
-    val vowelToMatraMap: Map<String, String>
+    val vowelToMatraMap: Map<String, String>,
+    val layout: List<List<Int>>
 )
 
 private val DEVA_VOWELS = listOf("अ", "आ", "इ", "ई", "उ", "ऊ", " उ", "ऋ", "ॠ", "ऌ", "ॡ", "ए", "ऐ", "ऎ", "ओ", "औ", "ऒ")
@@ -248,6 +249,13 @@ private val baseKeyConfigs = listOf(
     KeyConfig(R.id.r4c4, "।", "?", symBase = ".", symFlick = "!", sym2Base = ".", sym2Flick = "!", latinBase = ".", latinFlick = "?")
 )
 
+val baseLayout = listOf(
+    listOf(R.id.r1c1, R.id.r1c2, R.id.r1c3, R.id.r1c4, R.id.r1c5, R.id.r1c6, R.id.r1c7, R.id.r1c8, R.id.r1c9, R.id.r1c10),
+    listOf(R.id.r2c1, R.id.r2c2, R.id.r2c3, R.id.r2c4, R.id.r2c5, R.id.r2c6, R.id.r2c7, R.id.r2c8, R.id.r2c9),
+    listOf(R.id.key_shift, R.id.r3c2, R.id.r3c3, R.id.r3c4, R.id.r3c5, R.id.r3c6, R.id.r3c7, R.id.r3c8, R.id.key_backspace),
+    listOf(R.id.key_sym, R.id.r4c2, R.id.key_globe, R.id.key_space, R.id.r4c4, R.id.key_enter)
+)
+
 object ScriptManager {
     private val cache = mutableMapOf<BrahmiScript, ScriptData>()
 
@@ -260,7 +268,8 @@ object ScriptManager {
             consonants = DEVA_CONSONANTS,
             modifiers = DEVA_MODIFIERS,
             keyConfigs = baseKeyConfigs.associateBy { it.id },
-            vowelToMatraMap = devaVowelToMatra
+            vowelToMatraMap = devaVowelToMatra,
+            layout = baseLayout
         )
     }
 
@@ -287,6 +296,13 @@ object ScriptManager {
         }
 
         val finalKeys = applyLayoutOverrides(script, translatedKeys)
+        
+        // Dynamically strip out empty keys from the layout
+        val validKeyIds = finalKeys.filter { it.base.isNotEmpty() || it.flick.isNotEmpty() }.map { it.id }.toSet()
+        val specialKeys = setOf(R.id.key_shift, R.id.key_backspace, R.id.key_sym, R.id.key_globe, R.id.key_space, R.id.key_enter)
+        val dynamicLayout = baseLayout.map { row ->
+            row.filter { id -> specialKeys.contains(id) || validKeyIds.contains(id) }
+        }
 
         return ScriptData(
             script = script,
@@ -295,23 +311,45 @@ object ScriptManager {
             consonants = localConsonants,
             modifiers = localModifiers,
             keyConfigs = finalKeys.associateBy { it.id },
-            vowelToMatraMap = localVowelToMatra
+            vowelToMatraMap = localVowelToMatra,
+            layout = dynamicLayout
         )
     }
 
     private fun applyLayoutOverrides(script: BrahmiScript, keys: List<KeyConfig>): List<KeyConfig> {
-	return keys
-        // return when (script) {
-        //     BrahmiScript.KANNADA, BrahmiScript.TELUGU, BrahmiScript.TAMIL, BrahmiScript.MALAYALAM, BrahmiScript.SINHALA -> {
-        //         keys.map { k ->
-        //             when (k.id) {
-        //                 R.id.r1c1 -> k.copy(base = k.flick, flick = k.base) // O / Short O
-        //                 R.id.r2c2 -> k.copy(base = k.flick, flick = k.base) // E / Short E
-        //                 else -> k
-        //             }
-        //         }
-        //     }
-        //     else -> keys
-        // }
+        return when (script) {
+            BrahmiScript.KANNADA, BrahmiScript.TELUGU, BrahmiScript.MALAYALAM, BrahmiScript.SINHALA -> {
+                keys.map { k ->
+                    when (k.id) {
+                        R.id.r1c1 -> k.copy(base = k.flick, flick = k.base) // O / Short O
+                        R.id.r2c2 -> k.copy(base = k.flick, flick = k.base) // E / Short E
+                        else -> k
+                    }
+                }
+            }
+            BrahmiScript.TAMIL -> {
+                keys.map { k ->
+                    when (k.id) {
+                        R.id.r1c1 -> k.copy(base = k.flick, flick = k.base) // O / Short O
+                        R.id.r2c2 -> k.copy(base = k.flick, flick = k.base) // E / Short E
+                        // Blank out missing consonants for Tamil
+                        R.id.r1c2 -> k.copy(flick = "") // Ka is valid, Kha is missing
+                        R.id.r1c3 -> k.copy(base = "", flick = "") // Ba, Bha missing (Tamil uses Pa)
+                        R.id.r1c4 -> k.copy(base = "", flick = "") // Dda, Ddha missing
+                        R.id.r1c8 -> k.copy(base = "", flick = "") // Ga, Gha missing
+                        R.id.r1c9 -> k.copy(base = "", flick = "") // Da, Dha missing
+                        R.id.r1c10 -> k.copy(flick = "") // Ja is there, Jha is missing
+                        R.id.r2c6 -> k.copy(flick = "") // Pa is there, Pha is missing
+                        R.id.r2c9 -> k.copy(flick = "") // Ta is there, Tha is missing
+                        R.id.r3c7 -> k.copy(flick = "") // Ca is there, Cha is missing
+                        R.id.r1c5 -> k.copy(flick = "") // Tta is there, Ttha is missing
+                        R.id.r1c6 -> k.copy(base = "", flick = "") // Vocalic R missing
+                        R.id.r3c2 -> k.copy(base = "ஐ", flick = "ஔ") // Ai, Au (Vocalic L missing)
+                        else -> k
+                    }
+                }
+            }
+            else -> keys
+        }
     }
 }

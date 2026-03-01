@@ -52,6 +52,10 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var gestureTrailView: GestureTrailView? = null
     private var candidateBar: View? = null
     
+    // Layout Engine State
+    private val viewPool = mutableMapOf<Int, View>()
+    private var currentLayoutGrid: List<List<Int>>? = null
+    
     private var siddhamTypeface: Typeface? = null
     private var granthaTypeface: Typeface? = null
     private var sharadaTypeface: Typeface? = null
@@ -168,6 +172,12 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         candidateBar = layout.findViewById(R.id.candidate_bar)
         gestureTrailView = layout.findViewById(R.id.gesture_trail)
         allKeys = findAllFlickKeys(layout)
+        
+        // Cache all keys for the dynamic layout engine
+        allKeys.forEach { viewPool[it.id] = it }
+        listOf(R.id.key_shift, R.id.key_backspace, R.id.key_sym, R.id.key_globe, R.id.key_space, R.id.key_enter).forEach { id ->
+            layout.findViewById<View>(id)?.let { viewPool[id] = it }
+        }
 
         // Initialize Phase 3 components
         candidateView = layout.findViewById(R.id.candidate_view)
@@ -526,6 +536,13 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         spaceBtn?.typeface = tf
 
         val scriptData = ScriptManager.getScriptData(keyboardState.script)
+        
+        // Check if layout needs rebuilding (e.g. switching to/from Tamil)
+        val targetLayout = if (mode.isLatin()) baseLayout else scriptData.layout
+        if (currentLayoutGrid != targetLayout) {
+            rebuildKeyboardGrid(targetLayout)
+        }
+
         allKeys.forEach { k ->
             k.setTypeface(tf)
             val cfg = scriptData.keyConfigs[k.id] ?: return@forEach
@@ -534,6 +551,44 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             )
             k.setVisualState(b, f, false)
         }
+    }
+
+    private fun rebuildKeyboardGrid(layout: List<List<Int>>) {
+        val rootLayout = this.window.window?.decorView ?: return
+        val container = rootLayout.findViewById<LinearLayout>(R.id.keyboard_rows) ?: return
+        
+        container.removeAllViews()
+
+        for (rowIds in layout) {
+            val rowLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            
+            for (id in rowIds) {
+                val keyView = viewPool[id] ?: continue
+                
+                // Remove view from its previous parent row if it has one
+                (keyView.parent as? ViewGroup)?.removeView(keyView)
+                
+                // Ensure it keeps its relative weight mapping from original instantiation
+                if (keyView.layoutParams == null) {
+                    keyView.layoutParams = LinearLayout.LayoutParams(0, (50f * density).toInt(), 1f).apply {
+                        setMargins((3f * density).toInt(), (3f * density).toInt(), (3f * density).toInt(), (3f * density).toInt())
+                    }
+                }
+                
+                rowLayout.addView(keyView)
+            }
+            container.addView(rowLayout)
+        }
+        
+        // Update the global key locator cache since the views moved physically
+        keyLocator.initialize(container)
+        currentLayoutGrid = layout
     }
 
     private fun updateBase() {
