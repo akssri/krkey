@@ -65,6 +65,18 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var isGestureTyping = false
     private var lastPopupText: String? = null
     private var density = 1f
+    
+    // --- Gesture Tuning Parameters ---
+    private val FLICK_VERTICAL_THRESHOLD_DP = 15f      // Minimum upward travel to register a flick
+    private val FLICK_VISUAL_THRESHOLD_DP = 10f        // Upward travel required to change the key popup from base to flick
+    private val FLICK_MIN_DISTANCE_DP = 10f            // Minimum total path distance for a flick
+    private val FLICK_VERTICALITY_RATIO = 1.2f         // Allowed horizontal drift ratio (higher = lazier diagonal flicks allowed)
+    
+    private val SWIPE_START_DISTANCE_DP = 50f          // Horizontal distance required to trigger gesture typing
+    private val SWIPE_FORCE_DISTANCE_DP = 100f         // Path distance that forces gesture typing regardless of direction
+    private val SWIPE_NEW_KEY_RATIO = 0.6f             // Ratio of key width travel to trigger gesture typing if not a flick
+    // ---------------------------------
+
     private var capturedKey: FlickKeyView? = null
     private val currentPeckedWord = StringBuilder()
     private var lastComposedWord: String? = null
@@ -333,7 +345,13 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         if (path.size < 2) return false
         val start = path.first(); val end = path.last()
         val dist = pathDist(path)
-        return (end.y - start.y) < -15f * density && Math.abs(end.x - start.x) < Math.abs(end.y - start.y) * 0.8 && dist > 10f * density
+        
+        val verticalDist = start.y - end.y // Positive is upward
+        val horizontalDist = Math.abs(end.x - start.x)
+        
+        return verticalDist > FLICK_VERTICAL_THRESHOLD_DP * density && 
+               horizontalDist < verticalDist * FLICK_VERTICALITY_RATIO && 
+               dist > FLICK_MIN_DISTANCE_DP * density
     }
 
     private fun getCleanOutput(cfg: KeyConfig, isFlick: Boolean): String {
@@ -418,20 +436,27 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 val px = event.getX(idx); val py = event.getY(idx); gesturePath.add(android.graphics.PointF(px, py))
                 if (!isGestureTyping) {
                     val currentKey = findKeyAt(px, py); val startPos = gesturePath[0]
-                    val movedToNewKey = currentKey != null && currentKey != activeKey && Math.abs(px - startPos.x) > (activeKey?.width ?: 0) * 0.6
-                    val isLikelyFlick = (py - startPos.y) < 0 && Math.abs(px - startPos.x) < Math.abs(py - startPos.y) * 0.8
+                    
+                    val verticalDist = startPos.y - py // Positive is upward
+                    val horizontalDist = Math.abs(px - startPos.x)
+                    
+                    val movedToNewKey = currentKey != null && currentKey != activeKey && horizontalDist > (activeKey?.width ?: 0) * SWIPE_NEW_KEY_RATIO
+                    val isLikelyFlick = verticalDist > 0 && horizontalDist < verticalDist * FLICK_VERTICALITY_RATIO
+                    
                     activeKey?.let { k ->
                         val scriptData = ScriptManager.getScriptData(keyboardState.script)
                         val (b, f) = scriptData.keyConfigs[k.id]!!.getResolvedStrings(
                             keyboardState.mode, keyboardState.currentBaseChar, scriptData
                         )
-                        val text = if (py - startPos.y < -10f * density) f else b
+                        val text = if (verticalDist > FLICK_VISUAL_THRESHOLD_DP * density) f else b
                         if (text != lastPopupText) {
                             lastPopupText = text
                             k.showPopup(text)
                         }
                     }
-                    if ((pathDist(gesturePath) > 50f * density && !isLikelyFlick) || (movedToNewKey && !isLikelyFlick) || pathDist(gesturePath) > 200f * density) {
+                    if ((pathDist(gesturePath) > SWIPE_START_DISTANCE_DP * density && !isLikelyFlick) || 
+                        (movedToNewKey && !isLikelyFlick) || 
+                        pathDist(gesturePath) > SWIPE_FORCE_DISTANCE_DP * density) {
                         isGestureTyping = true
                         commitCurrentInput()
                         
