@@ -3,21 +3,21 @@ package com.akssri.krkey
 import android.graphics.Rect
 
 enum class BrahmiScript(val scriptName: String, val nativeName: String, val iastName: String, val isExperimental: Boolean = false) {
-    NAGARI("Nagari", "देवनागरी", "Devanāgarī"),
+    DEVANAGARI("Devanagari", "देवनागरी", "Devanāgarī"),
     KANNADA("Kannada", "ಕನ್ನಡ", "Kannaḍa"),
     GRANTHA("Grantha", "𑌗𑍍𑌰𑌨𑍍𑌥", "Grantha"),
     MALAYALAM("Malayalam", "മലയാളം", "Malayāḷam"),
     TAMIL("Tamil", "தமிழ்", "Tamiḻ"),
     TELUGU("Telugu", "తెలుగు", "Telugu"),
-    BENGALI("Bengali", "বাংলা", "Bāṅglā"),
-    GUJARATI("Gujarati", "ગુજરાતી", "Gujarātī"),
-    ORIYA("Oriya", "ଓଡ଼ିଆ", "Oṛiā"),
-    GURMUKHI("Gurmukhi", "ਗੁਰਮੁਖੀ", "Gurmukhī"),
-    SINHALA("Sinhala", "සිංහල", "Siṃhala"),
+    BENGALI("Bengali", "বাংলা", "Bāṅglā", true),
+    GUJARATI("Gujarati", "ગુજરાતી", "Gujarātī", true),
+    ORIYA("Oriya", "ଓଡ଼ିଆ", "Oṛiā", true),
+    GURMUKHI("Gurmukhi", "ਗੁਰਮੁਖੀ", "Gurmukhī", true),
+    SINHALA("Sinhala", "සිංහල", "Siṃhala", true),
     SHARADA("Sharada", "𑆯𑆳𑆫𑆢𑆳", "Śāradā"),
-    BRAHMI("Brahmi", "𑀩𑁆𑀭𑀸𑀳𑁆𑀫𑀻", "Brāhmī"),
-    SIDDHAM("Siddham", "𑖭𑖰𑖟𑖿𑖠𑖦𑖿", "Siddham"),
-    BALINESE("Balinese", "ᬩᬮᬶ", "Bali"),
+    BRAHMI("Brahmi", "𑀩𑁆𑀭𑀸𑀳𑁆𑀫𑀻", "Brāhmī", true),
+    SIDDHAM("Siddham", "𑖭𑖰𑖟𑖿𑖠𑖦𑖿", "Siddham", true),
+    BALINESE("Balinese", "ᬩᬮᬶ", "Bali", true),
     SAURASHTRA("Saurashtra", "ꢱꣃꢬꢵꢰ꣄ꢜ꣄ꢬꢵ", "Saurashtra", true),
     KAITHI("Kaithi", "𑂍𑂶𑂟𑂲", "Kaithi", true),
     KHUDAWADI("Khudawadi", "𑊻𑋣𑋏𑋢𑋔𑋠𑋑𑋢", "Khudawadi", true),
@@ -63,7 +63,7 @@ internal fun buildMap(src: String, dst: String): Map<Char, String> {
 fun BrahmiScript.getAvailableDictionaries(): List<Pair<String, String>> {
     val sanskrit = "sa_dict.txt" to "संस्कृत".toBrahmiScript(this) + " (Sanskrit)"
     val localDicts = when (this) {
-        BrahmiScript.NAGARI -> listOf("hi_dict.txt" to "हिन्दी (Hindi)", "mr_dict.txt" to "मराठी (Marathi)")
+        BrahmiScript.DEVANAGARI -> listOf("hi_dict.txt" to "हिन्दी (Hindi)", "mr_dict.txt" to "मराठी (Marathi)")
         BrahmiScript.KANNADA -> listOf("kn_dict.txt" to "ಕನ್ನಡ (Kannada)")
         BrahmiScript.MALAYALAM -> listOf("ml_dict.txt" to "മലയാളം (Malayalam)")
         BrahmiScript.TAMIL -> listOf("ta_dict.txt" to "தமிழ் (Tamil)")
@@ -85,7 +85,7 @@ fun BrahmiScript.getAvailableDictionaries(): List<Pair<String, String>> {
 fun BrahmiScript.getDefaultDictionaries(): Set<String> {
     val defaults = mutableSetOf("sa_dict.txt")
     when (this) {
-        BrahmiScript.NAGARI -> defaults.add("hi_dict.txt")
+        BrahmiScript.DEVANAGARI -> defaults.add("hi_dict.txt")
         BrahmiScript.KANNADA -> defaults.add("kn_dict.txt")
         BrahmiScript.MALAYALAM -> defaults.add("ml_dict.txt")
         BrahmiScript.TAMIL -> defaults.add("ta_dict.txt")
@@ -102,7 +102,7 @@ fun BrahmiScript.getDefaultDictionaries(): Set<String> {
 }
 
 fun String.toBrahmiScript(targetScript: BrahmiScript): String {
-    if (targetScript == BrahmiScript.NAGARI) return this
+    if (targetScript == BrahmiScript.DEVANAGARI) return this
     val map = SCRIPT_MAPS[targetScript] ?: return this
     val sb = StringBuilder()
     var i = 0
@@ -253,8 +253,8 @@ object ScriptManager {
 
     init {
         val devaVowelToMatra = DEVA_VOWELS.zip(DEVA_MATRAS).toMap()
-        cache[BrahmiScript.NAGARI] = ScriptData(
-            script = BrahmiScript.NAGARI,
+        cache[BrahmiScript.DEVANAGARI] = ScriptData(
+            script = BrahmiScript.DEVANAGARI,
             vowels = DEVA_VOWELS,
             matras = DEVA_MATRAS,
             consonants = DEVA_CONSONANTS,

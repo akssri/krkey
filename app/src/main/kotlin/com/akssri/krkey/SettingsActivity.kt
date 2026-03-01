@@ -87,15 +87,15 @@ class SettingsActivity : AppCompatActivity() {
             holder.name.typeface = typefaces[script] ?: Typeface.DEFAULT
             holder.nativeName.typeface = Typeface.DEFAULT
             
-            // Default: Nagari is enabled by default if no pref exists
-            val isEnabled = prefs.getBoolean("script_${script.name}", script == BrahmiScript.NAGARI)
+            // Default: Devanagari is enabled by default if no pref exists
+            val isEnabled = prefs.getBoolean("script_${script.name}", script == BrahmiScript.DEVANAGARI)
 
             holder.checkbox.setOnCheckedChangeListener(null) // Clear listener before setting state
             holder.checkbox.isChecked = isEnabled
 
             val updatePref = { checked: Boolean ->
                 val enabledCount = scripts.count {
-                    if (it == script) checked else prefs.getBoolean("script_${it.name}", it == BrahmiScript.NAGARI)
+                    if (it == script) checked else prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
                 }
                 
                 if (enabledCount > 0) {

@@ -9,7 +9,7 @@ import com.akssri.krkey.BrahmiScript
  */
 data class KeyboardState(
     val mode: InputMode = InputMode.IndicNormal,
-    val script: BrahmiScript = BrahmiScript.NAGARI,
+    val script: BrahmiScript = BrahmiScript.DEVANAGARI,
     val currentBaseChar: String = "",
     val isShiftLocked: Boolean = false
 ) {

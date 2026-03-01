@@ -150,11 +150,11 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         userDict = UserDictionaryManager(this)
 
         val lastScript = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
-            .getString("last_script", BrahmiScript.NAGARI.name)
+            .getString("last_script", BrahmiScript.DEVANAGARI.name)
         val script = try {
             BrahmiScript.valueOf(lastScript!!)
         } catch (e: Exception) {
-            BrahmiScript.NAGARI
+            BrahmiScript.DEVANAGARI
         }
 
         // Initialize state
@@ -306,7 +306,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
             val prefs = getSharedPreferences("krkey_prefs", Context.MODE_PRIVATE)
             val enabled = BrahmiScript.values().filter {
-                !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.NAGARI)
+                !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
             }
             if (enabled.size > 1) {
                 val currentScript = keyboardState.script
