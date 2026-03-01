@@ -65,7 +65,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     inner class ScriptAdapter(private val typefaces: Map<BrahmiScript, Typeface?>) : RecyclerView.Adapter<ScriptAdapter.ViewHolder>() {
-        private val scripts = BrahmiScript.values()
+        private val scripts = BrahmiScript.values().filter { !it.isExperimental }
         private val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
 
         inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {

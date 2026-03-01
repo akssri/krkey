@@ -304,9 +304,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
         layout.findViewById<Button>(R.id.key_globe)?.setOnClickListener {
             it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-            val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
+            val prefs = getSharedPreferences("krkey_prefs", Context.MODE_PRIVATE)
             val enabled = BrahmiScript.values().filter {
-                prefs.getBoolean("script_${it.name}", it == BrahmiScript.NAGARI)
+                !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.NAGARI)
             }
             if (enabled.size > 1) {
                 val currentScript = keyboardState.script

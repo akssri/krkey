@@ -2,7 +2,7 @@ package com.akssri.krkey
 
 import android.graphics.Rect
 
-enum class BrahmiScript(val scriptName: String, val nativeName: String, val iastName: String) {
+enum class BrahmiScript(val scriptName: String, val nativeName: String, val iastName: String, val isExperimental: Boolean = false) {
     NAGARI("Nagari", "देवनागरी", "Devanāgarī"),
     KANNADA("Kannada", "ಕನ್ನಡ", "Kannaḍa"),
     GRANTHA("Grantha", "𑌗𑍍𑌰𑌨𑍍𑌥", "Grantha"),
@@ -18,23 +18,23 @@ enum class BrahmiScript(val scriptName: String, val nativeName: String, val iast
     BRAHMI("Brahmi", "𑀩𑁆𑀭𑀸𑀳𑁆𑀫𑀻", "Brāhmī"),
     SIDDHAM("Siddham", "𑖭𑖰𑖟𑖿𑖠𑖦𑖿", "Siddham"),
     BALINESE("Balinese", "ᬩᬮᬶ", "Bali"),
-    SAURASHTRA("Saurashtra", "ꢱꣃꢬꢵꢰ꣄ꢜ꣄ꢬꢵ", "Saurashtra"),
-    KAITHI("Kaithi", "𑂍𑂶𑂟𑂲", "Kaithi"),
-    KHUDAWADI(" Khudawadi", "𑊻𑋣𑋏𑋢𑋔𑋠𑋑𑋢", "Khudawadi"),
-    TULU_TIGALARI("Tulu-Tigalari", "𑒞𑒳𑒪𑒳", "Tulu-Tigalari"),
-    NEWA("Newa", "𑐣𑐾𑐰𑐵", "Newa"),
-    TIRHUTA("Tirhuta", "𑒞𑒱𑒩𑒯𑒳𑒞𑒰", "Tirhuta"),
-    MODI("Modi", "𑘦𑘻𑘚𑘲", "Modi"),
-    TAKRI("Takri", "𑚔𑚭𑚊𑚤𑚯", "Takri"),
-    DOGRA("Dogra", "𑠖𑠵𑠌𑠤𑠭", "Dogra"),
-    NANDINAGARI("Nandinagari", "𑦾𑧞𑧑𑧁𑧕𑧈𑧞𑧒", "Nandinagari"),
-    BHAIKSUKI("Bhaiksuki", "𑰥𑰺𑰎𑰿𑰬𑰲𑰎𑰱", "Bhaiksuki"),
-    MASARAM_GONDI("Masaram Gondi", "Masaram Gondi", "Masaram Gondi"),
-    GUNJALA_GONDI("Gunjala Gondi", "Gunjala Gondi", "Gunjala Gondi"),
-    KAWI("Kawi", "Kawi", "Kawi"),
-    GURUNG_KHEMA("Gurung Khema", "Gurung Khema", "Gurung Khema"),
-    KIRAT_RAI("Kirat Rai", "Kirat Rai", "Kirat Rai"),
-    AHOM("Ahom", "Ahom", "Ahom")
+    SAURASHTRA("Saurashtra", "ꢱꣃꢬꢵꢰ꣄ꢜ꣄ꢬꢵ", "Saurashtra", true),
+    KAITHI("Kaithi", "𑂍𑂶𑂟𑂲", "Kaithi", true),
+    KHUDAWADI("Khudawadi", "𑊻𑋣𑋏𑋢𑋔𑋠𑋑𑋢", "Khudawadi", true),
+    TULU_TIGALARI("Tulu-Tigalari", "𑒞𑒳𑒪𑒳", "Tulu-Tigalari", true),
+    NEWA("Newa", "𑐣𑐾𑐰𑐵", "Newa", true),
+    TIRHUTA("Tirhuta", "𑒞𑒱𑒩𑒯𑒳𑒞𑒰", "Tirhuta", true),
+    MODI("Modi", "𑘦𑘻𑘚𑘲", "Modi", true),
+    TAKRI("Takri", "𑚔𑚭𑚊𑚤𑚯", "Takri", true),
+    DOGRA("Dogra", "𑠖𑠵𑠌𑠤𑠭", "Dogra", true),
+    NANDINAGARI("Nandinagari", "𑦾𑧞𑧑𑧁𑧕𑧈𑧞𑧒", "Nandinagari", true),
+    BHAIKSUKI("Bhaiksuki", "𑰥𑰺𑰎𑰿𑰬𑰲𑰎𑰱", "Bhaiksuki", true),
+    MASARAM_GONDI("Masaram Gondi", "Masaram Gondi", "Masaram Gondi", true),
+    GUNJALA_GONDI("Gunjala Gondi", "Gunjala Gondi", "Gunjala Gondi", true),
+    KAWI("Kawi", "Kawi", "Kawi", true),
+    GURUNG_KHEMA("Gurung Khema", "Gurung Khema", "Gurung Khema", true),
+    KIRAT_RAI("Kirat Rai", "Kirat Rai", "Kirat Rai", true),
+    AHOM("Ahom", "Ahom", "Ahom", true)
 }
 
 internal fun String.toCodePointList(): List<String> {
