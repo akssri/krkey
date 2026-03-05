@@ -40,6 +40,7 @@ class KeyLocator(
      */
     fun rebuildCache() {
         val container = this.container ?: return
+        if (allKeys.isEmpty()) return
 
         keyBoundsCache = allKeys.map { key ->
             val rect = Rect()
