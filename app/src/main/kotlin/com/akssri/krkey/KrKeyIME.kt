@@ -137,6 +137,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         val rowsContainer = layout.findViewById<View>(R.id.keyboard_rows).parent as View
         rowsContainer.setOnTouchListener { _, event -> handleGlobalTouch(event) }
         
+        currentLayoutGrid = null // Force a rebuild of the grid to populate tags
         updateUI()
         return layout
     }
@@ -259,7 +260,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 val flick = tuple.second as String
                 
                 return if (keyboardState.mode is InputMode.LatinNormal) {
-                    base.lowercase() to base.uppercase()
+                    val b = if (base.length == 1 && base.first().isLetter()) base.lowercase() else base
+                    val f = if (base.length == 1 && base.first().isLetter()) base.uppercase() else flick
+                    b to f
                 } else {
                     formatKeyText(base, keyboardState.currentBaseChar, scriptData) to 
                     formatKeyText(flick, keyboardState.currentBaseChar, scriptData)
@@ -268,13 +271,20 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             override fun getKeyCommitText(key: FlickKeyView, isFlick: Boolean): String {
                 val tuple = key.tag as? Pair<*, *> ?: return ""
                 val scriptData = ScriptManager.getScriptData(keyboardState.script)
-                val raw = if (isFlick) tuple.second as String else tuple.first as String
+                val base = tuple.first as String
+                val flick = tuple.second as String
                 
-                val out = if (keyboardState.mode is InputMode.LatinNormal) {
-                    if (isFlick) raw.uppercase() else raw.lowercase()
-                } else raw
+                val raw = if (keyboardState.mode is InputMode.LatinNormal) {
+                    if (isFlick) {
+                        if (base.length == 1 && base.first().isLetter()) base.uppercase() else flick
+                    } else {
+                        if (base.length == 1 && base.first().isLetter()) base.lowercase() else base
+                    }
+                } else {
+                    if (isFlick) flick else base
+                }
                 
-                return getCleanOutput(out, scriptData)
+                return getCleanOutput(raw, scriptData)
             }
             override fun isGestureTypingEnabled() = keyboardState.mode.isLatin() && !keyboardState.mode.isSymbol()
         })
@@ -353,7 +363,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             k.setTypeface(tf)
             
             val (displayBase, displayFlick) = if (mode is InputMode.LatinNormal) {
-                base.lowercase() to base.uppercase()
+                val b = if (base.length == 1 && base.first().isLetter()) base.lowercase() else base
+                val f = if (base.length == 1 && base.first().isLetter()) base.uppercase() else flick
+                b to f
             } else {
                 formatKeyText(base, keyboardState.currentBaseChar, scriptData) to 
                 formatKeyText(flick, keyboardState.currentBaseChar, scriptData)
