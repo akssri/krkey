@@ -1,27 +1,23 @@
 package com.akssri.krkey
 
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.content.res.ResourcesCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.akssri.krkey.getAvailableDictionaries
-import com.akssri.krkey.getDefaultDictionaries
-
-import androidx.core.content.res.ResourcesCompat
-import android.graphics.Typeface
-import android.view.Menu
-import android.view.MenuItem
-import androidx.appcompat.app.AlertDialog
-import android.widget.Toast
 
 class SettingsActivity : AppCompatActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
@@ -32,14 +28,15 @@ class SettingsActivity : AppCompatActivity() {
 
         val recyclerView = findViewById<RecyclerView>(R.id.scripts_recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
-        
-        val typefaces = mapOf(
-            BrahmiScript.SIDDHAM to ResourcesCompat.getFont(this, R.font.noto_sans_siddham),
-            BrahmiScript.GRANTHA to ResourcesCompat.getFont(this, R.font.noto_sans_grantha),
-            BrahmiScript.SHARADA to ResourcesCompat.getFont(this, R.font.noto_sans_sharada),
-            BrahmiScript.BRAHMI to ResourcesCompat.getFont(this, R.font.noto_sans_brahmi)
-        )
-        
+
+        val typefaces =
+            mapOf(
+                BrahmiScript.SIDDHAM to ResourcesCompat.getFont(this, R.font.noto_sans_siddham),
+                BrahmiScript.GRANTHA to ResourcesCompat.getFont(this, R.font.noto_sans_grantha),
+                BrahmiScript.SHARADA to ResourcesCompat.getFont(this, R.font.noto_sans_sharada),
+                BrahmiScript.BRAHMI to ResourcesCompat.getFont(this, R.font.noto_sans_brahmi),
+            )
+
         recyclerView.adapter = ScriptAdapter(typefaces)
     }
 
@@ -75,18 +72,24 @@ class SettingsActivity : AppCompatActivity() {
             val dictContainer: ViewGroup = view.findViewById(R.id.dict_container)
         }
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        override fun onCreateViewHolder(
+            parent: ViewGroup,
+            viewType: Int,
+        ): ViewHolder {
             val view = LayoutInflater.from(parent.context).inflate(R.layout.item_script_toggle, parent, false)
             return ViewHolder(view)
         }
 
-        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        override fun onBindViewHolder(
+            holder: ViewHolder,
+            position: Int,
+        ) {
             val script = scripts[position]
             holder.name.text = script.nativeName
             holder.nativeName.text = script.iastName
             holder.name.typeface = typefaces[script] ?: Typeface.DEFAULT
             holder.nativeName.typeface = Typeface.DEFAULT
-            
+
             // Default: Devanagari is enabled by default if no pref exists
             val isEnabled = prefs.getBoolean("script_${script.name}", script == BrahmiScript.DEVANAGARI)
 
@@ -94,10 +97,11 @@ class SettingsActivity : AppCompatActivity() {
             holder.checkbox.isChecked = isEnabled
 
             val updatePref = { checked: Boolean ->
-                val enabledCount = scripts.count {
-                    if (it == script) checked else prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
-                }
-                
+                val enabledCount =
+                    scripts.count {
+                        if (it == script) checked else prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI)
+                    }
+
                 if (enabledCount > 0) {
                     prefs.edit().putBoolean("script_${script.name}", checked).apply()
                     true
@@ -113,7 +117,7 @@ class SettingsActivity : AppCompatActivity() {
                     holder.checkbox.isChecked = newState
                 }
             }
-            
+
             holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
                 updatePref(isChecked)
                 // Show/hide dictionary options
@@ -124,7 +128,11 @@ class SettingsActivity : AppCompatActivity() {
             updateDictionaryUI(holder, script, isEnabled)
         }
 
-        private fun updateDictionaryUI(holder: ViewHolder, script: BrahmiScript, isEnabled: Boolean) {
+        private fun updateDictionaryUI(
+            holder: ViewHolder,
+            script: BrahmiScript,
+            isEnabled: Boolean,
+        ) {
             holder.dictContainer.removeAllViews()
 
             if (!isEnabled) {
@@ -142,19 +150,20 @@ class SettingsActivity : AppCompatActivity() {
             val defaults = script.getDefaultDictionaries()
 
             dictionaries.forEach { (dictFile, displayName) ->
-                val checkbox = CheckBox(holder.itemView.context).apply {
-                    text = displayName
-                    textSize = 14f
-                    setPadding(0, 8, 0, 8)
+                val checkbox =
+                    CheckBox(holder.itemView.context).apply {
+                        text = displayName
+                        textSize = 14f
+                        setPadding(0, 8, 0, 8)
 
-                    val isChecked = prefs.getBoolean("dict_${script.name}_$dictFile", dictFile in defaults)
-                    setOnCheckedChangeListener(null)
-                    this.isChecked = isChecked
+                        val isChecked = prefs.getBoolean("dict_${script.name}_$dictFile", dictFile in defaults)
+                        setOnCheckedChangeListener(null)
+                        this.isChecked = isChecked
 
-                    setOnCheckedChangeListener { _, checked ->
-                        prefs.edit().putBoolean("dict_${script.name}_$dictFile", checked).apply()
+                        setOnCheckedChangeListener { _, checked ->
+                            prefs.edit().putBoolean("dict_${script.name}_$dictFile", checked).apply()
+                        }
                     }
-                }
                 holder.dictContainer.addView(checkbox)
             }
         }

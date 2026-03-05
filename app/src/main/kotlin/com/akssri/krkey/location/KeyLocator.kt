@@ -14,11 +14,11 @@ import kotlin.math.sqrt
  * Performance improvement: ~60% reduction in touch event processing time.
  */
 class KeyLocator(
-    private var allKeys: List<FlickKeyView>
+    private var allKeys: List<FlickKeyView>,
 ) {
     private data class KeyBounds(
         val key: FlickKeyView,
-        val rect: Rect
+        val rect: Rect,
     )
 
     private var keyBoundsCache: List<KeyBounds> = emptyList()
@@ -28,7 +28,10 @@ class KeyLocator(
      * Initialize the locator with the keyboard container.
      * Call this once after layout inflation.
      */
-    fun initialize(container: ViewGroup, keys: List<FlickKeyView>? = null) {
+    fun initialize(
+        container: ViewGroup,
+        keys: List<FlickKeyView>? = null,
+    ) {
         this.container = container
         if (keys != null) allKeys = keys
         rebuildCache()
@@ -42,12 +45,13 @@ class KeyLocator(
         val container = this.container ?: return
         if (allKeys.isEmpty()) return
 
-        keyBoundsCache = allKeys.map { key ->
-            val rect = Rect()
-            key.getDrawingRect(rect)
-            container.offsetDescendantRectToMyCoords(key, rect)
-            KeyBounds(key, rect)
-        }
+        keyBoundsCache =
+            allKeys.map { key ->
+                val rect = Rect()
+                key.getDrawingRect(rect)
+                container.offsetDescendantRectToMyCoords(key, rect)
+                KeyBounds(key, rect)
+            }
     }
 
     /**
@@ -58,7 +62,10 @@ class KeyLocator(
      * @param y Y coordinate in container space
      * @return FlickKeyView if found, or closest key within 150px, or null
      */
-    fun findKeyAt(x: Float, y: Float): FlickKeyView? {
+    fun findKeyAt(
+        x: Float,
+        y: Float,
+    ): FlickKeyView? {
         val xInt = x.toInt()
         val yInt = y.toInt()
 
@@ -87,10 +94,11 @@ class KeyLocator(
         for (keyBounds in keyBoundsCache) {
             val centerX = keyBounds.rect.centerX()
             val centerY = keyBounds.rect.centerY()
-            val distance = sqrt(
-                (x - centerX).toDouble().pow(2.0) +
-                (y - centerY).toDouble().pow(2.0)
-            )
+            val distance =
+                sqrt(
+                    (x - centerX).toDouble().pow(2.0) +
+                        (y - centerY).toDouble().pow(2.0),
+                )
 
             if (distance < minDistance) {
                 minDistance = distance
@@ -104,18 +112,21 @@ class KeyLocator(
     /**
      * Live scan of key positions. Slow but guaranteed accurate even before cache is ready.
      */
-    private fun findKeyAtLive(x: Float, y: Float): FlickKeyView? {
+    private fun findKeyAtLive(
+        x: Float,
+        y: Float,
+    ): FlickKeyView? {
         val container = this.container ?: return null
         val r = Rect()
         var closest: FlickKeyView? = null
         var minDist = Double.MAX_VALUE
-        
+
         allKeys.forEach { k ->
             k.getDrawingRect(r)
             container.offsetDescendantRectToMyCoords(k, r)
-            
+
             if (r.contains(x.toInt(), y.toInt())) return k
-            
+
             val d = (x - r.centerX()).toDouble().pow(2.0) + (y - r.centerY()).toDouble().pow(2.0)
             if (d < minDist) {
                 minDist = d

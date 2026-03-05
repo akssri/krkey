@@ -6,25 +6,28 @@ import android.util.AttributeSet
 import android.view.View
 
 class GestureTrailView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
-
     private val trailColor = Color.parseColor("#64B5F6")
     private val maxStrokeWidth = 10f * resources.displayMetrics.density
     private val minStrokeWidth = 2f * resources.displayMetrics.density
     private val fadeDurationMs = 300L
 
-    private val paint = Paint().apply {
-        style = Paint.Style.STROKE
-        strokeJoin = Paint.Join.ROUND
-        strokeCap = Paint.Cap.ROUND
-        isAntiAlias = true
-    }
+    private val paint =
+        Paint().apply {
+            style = Paint.Style.STROKE
+            strokeJoin = Paint.Join.ROUND
+            strokeCap = Paint.Cap.ROUND
+            isAntiAlias = true
+        }
 
     private class TrailPoint(val x: Float, val y: Float, val time: Long)
 
     private val points = mutableListOf<TrailPoint>()
     private var isActive = false
 
-    fun addPoint(x: Float, y: Float) {
+    fun addPoint(
+        x: Float,
+        y: Float,
+    ) {
         points.add(TrailPoint(x, y, System.currentTimeMillis()))
         isActive = true
         invalidate()
@@ -59,14 +62,15 @@ class GestureTrailView(context: Context, attrs: AttributeSet?) : View(context, a
             val age = if (isActive) 0L else now - p1.time
             if (age > fadeDurationMs) continue
 
-            val fade = if (isActive) {
-                // While drawing: older segments fade based on position
-                val posRatio = i.toFloat() / points.size
-                0.3f + 0.7f * posRatio
-            } else {
-                // After release: time-based fade out
-                1f - (age.toFloat() / fadeDurationMs)
-            }
+            val fade =
+                if (isActive) {
+                    // While drawing: older segments fade based on position
+                    val posRatio = i.toFloat() / points.size
+                    0.3f + 0.7f * posRatio
+                } else {
+                    // After release: time-based fade out
+                    1f - (age.toFloat() / fadeDurationMs)
+                }
 
             val alpha = (fade * 200).toInt().coerceIn(0, 255)
             if (alpha == 0) continue

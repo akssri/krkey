@@ -10,10 +10,11 @@ import kotlin.math.sqrt
  * Replaces dual code paths with single classification logic.
  */
 class GestureDetector(private val density: Float) {
-
     sealed class GestureResult {
         data object Tap : GestureResult()
+
         data class Flick(val path: List<PointF>) : GestureResult()
+
         data class GestureTyping(val path: List<PointF>) : GestureResult()
     }
 
@@ -78,7 +79,10 @@ class GestureDetector(private val density: Float) {
     /**
      * Calculate straight-line distance between two points.
      */
-    private fun calculateDistance(p1: PointF, p2: PointF): Float {
+    private fun calculateDistance(
+        p1: PointF,
+        p2: PointF,
+    ): Float {
         val dx = p2.x - p1.x
         val dy = p2.y - p1.y
         return sqrt(dx.pow(2) + dy.pow(2))

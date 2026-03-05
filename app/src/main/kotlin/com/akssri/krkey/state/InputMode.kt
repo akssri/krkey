@@ -15,11 +15,16 @@ object KeyboardLayer {
  */
 sealed class InputMode(val layer: Int) {
     data object IndicNormal : InputMode(KeyboardLayer.INDIC)
+
     data object LatinNormal : InputMode(KeyboardLayer.LATIN)
+
     data class Symbol(val fromLatin: Boolean) : InputMode(KeyboardLayer.SYM)
+
     data class SymbolShifted(val fromLatin: Boolean) : InputMode(KeyboardLayer.SYM_SHIFT)
 
     fun isLatin() = this is LatinNormal || (this is Symbol && fromLatin) || (this is SymbolShifted && fromLatin)
+
     fun isSymbol() = this is Symbol || this is SymbolShifted
+
     fun isShifted() = this is SymbolShifted
 }

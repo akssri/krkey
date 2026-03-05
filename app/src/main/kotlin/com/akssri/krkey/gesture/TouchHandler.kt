@@ -13,7 +13,7 @@ import com.akssri.krkey.location.KeyLocator
  */
 class TouchHandler(
     private val keyLocator: KeyLocator,
-    private val gestureDetector: GestureDetector
+    private val gestureDetector: GestureDetector,
 ) {
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var activeKey: FlickKeyView? = null
@@ -30,7 +30,10 @@ class TouchHandler(
          * @param key The key that was pressed
          * @param displayText The text to show in popup
          */
-        fun onKeyPress(key: FlickKeyView, displayText: String)
+        fun onKeyPress(
+            key: FlickKeyView,
+            displayText: String,
+        )
 
         /**
          * Called when a key is released (ACTION_UP).
@@ -38,14 +41,21 @@ class TouchHandler(
          * @param text The text to commit
          * @param isFlick Whether this was a flick gesture
          */
-        fun onKeyRelease(key: FlickKeyView, text: String, isFlick: Boolean)
+        fun onKeyRelease(
+            key: FlickKeyView,
+            text: String,
+            isFlick: Boolean,
+        )
 
         /**
          * Called during gesture typing when path updates.
          * @param path Current gesture path
          * @param isActive Whether gesture typing has activated
          */
-        fun onGestureUpdate(path: List<PointF>, isActive: Boolean)
+        fun onGestureUpdate(
+            path: List<PointF>,
+            isActive: Boolean,
+        )
 
         /**
          * Called when gesture typing completes.
@@ -59,7 +69,10 @@ class TouchHandler(
          * @param isFlickActive Whether flick gesture is currently active
          * @return Pair of (baseText, flickText)
          */
-        fun getKeyDisplayText(key: FlickKeyView, isFlickActive: Boolean): Pair<String, String>
+        fun getKeyDisplayText(
+            key: FlickKeyView,
+            isFlickActive: Boolean,
+        ): Pair<String, String>
 
         /**
          * Get the text to commit when key is released.
@@ -67,7 +80,10 @@ class TouchHandler(
          * @param isFlick Whether this was a flick gesture
          * @return Clean text to commit (with composition prefixes removed)
          */
-        fun getKeyCommitText(key: FlickKeyView, isFlick: Boolean): String
+        fun getKeyCommitText(
+            key: FlickKeyView,
+            isFlick: Boolean,
+        ): String
 
         /**
          * Check if gesture typing should be enabled.
@@ -97,7 +113,10 @@ class TouchHandler(
         return true
     }
 
-    private fun handleDown(event: MotionEvent, callbacks: Callbacks) {
+    private fun handleDown(
+        event: MotionEvent,
+        callbacks: Callbacks,
+    ) {
         activePointerId = event.getPointerId(0)
         gesturePath.clear()
         gesturePath.add(PointF(event.x, event.y))
@@ -114,7 +133,10 @@ class TouchHandler(
         }
     }
 
-    private fun handleMove(event: MotionEvent, callbacks: Callbacks) {
+    private fun handleMove(
+        event: MotionEvent,
+        callbacks: Callbacks,
+    ) {
         val idx = event.findPointerIndex(activePointerId)
         if (idx < 0) return
 
@@ -146,7 +168,10 @@ class TouchHandler(
         }
     }
 
-    private fun handleUp(@Suppress("UNUSED_PARAMETER") event: MotionEvent, callbacks: Callbacks) {
+    private fun handleUp(
+        @Suppress("UNUSED_PARAMETER") event: MotionEvent,
+        callbacks: Callbacks,
+    ) {
         val finalKey = activeKey
 
         activeKey?.let {

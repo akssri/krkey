@@ -7,14 +7,15 @@ import com.google.gson.reflect.TypeToken
 class UserDictionaryManager(context: Context) {
     private val prefs = context.getSharedPreferences("krkey_user_dict", Context.MODE_PRIVATE)
     private val gson = Gson()
-    
+
     // Word -> Frequency
     private var userWords: MutableMap<String, Int> = mutableMapOf()
 
     // Strong reference to listener to prevent GC
-    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "words") load()
-    }
+    private val prefListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "words") load()
+        }
 
     init {
         load()
@@ -23,12 +24,17 @@ class UserDictionaryManager(context: Context) {
 
     fun load() {
         val json = prefs.getString("words", null)
-        userWords = if (json != null) {
-            val type = object : TypeToken<MutableMap<String, Int>>() {}.type
-            try { gson.fromJson(json, type) ?: mutableMapOf() } catch(e: Exception) { mutableMapOf() }
-        } else {
-            mutableMapOf()
-        }
+        userWords =
+            if (json != null) {
+                val type = object : TypeToken<MutableMap<String, Int>>() {}.type
+                try {
+                    gson.fromJson(json, type) ?: mutableMapOf()
+                } catch (e: Exception) {
+                    mutableMapOf()
+                }
+            } else {
+                mutableMapOf()
+            }
     }
 
     private fun save() {
