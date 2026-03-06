@@ -14,11 +14,12 @@ class WordPredictor(
     private var learnedCountMap: Map<String, Int> = emptyMap()
     private val userBigramIndex = mutableMapOf<Long, MutableList<IndexedWord>>()
 
-    private val charCenter: Map<Char, PointF> =
+    private val charCenter: Map<Int, PointF> =
         buildMap {
             for ((label, rect) in keys) {
-                if (label.length == 1) {
-                    put(label[0].lowercaseChar(), PointF(rect.centerX().toFloat(), rect.centerY().toFloat()))
+                val cp = label.codePointAt(0)
+                if (Character.charCount(cp) == label.length) {
+                    put(Character.toLowerCase(cp), PointF(rect.centerX().toFloat(), rect.centerY().toFloat()))
                 }
             }
         }
@@ -35,13 +36,13 @@ class WordPredictor(
         buildMap<Long, MutableList<IndexedWord>> {
             for ((index, word) in dictionary.withIndex()) {
                 if (word.length < 2) continue
-                val key = bigramKey(word.first(), word.last())
+                val key = bigramKey(word.codePointAt(0), word.codePointBefore(word.length))
                 getOrPut(key) { mutableListOf() }.add(IndexedWord(word, index))
             }
         }
 
     private class TrieNode {
-        val children = mutableMapOf<Char, TrieNode>()
+        val children = mutableMapOf<Int, TrieNode>()
         val topWords = mutableListOf<String>()
     }
 
@@ -51,8 +52,8 @@ class WordPredictor(
         for (word in dictionary) {
             val lowerWord = word.lowercase()
             var curr = trieRoot
-            for (char in lowerWord) {
-                curr = curr.children.getOrPut(char) { TrieNode() }
+            for (cp in codePointsOf(lowerWord)) {
+                curr = curr.children.getOrPut(cp) { TrieNode() }
                 if (curr.topWords.size < 10 && !curr.topWords.contains(word)) {
                     curr.topWords.add(word)
                 }
@@ -66,7 +67,7 @@ class WordPredictor(
         userBigramIndex.clear()
         for ((word, _) in words) {
             if (word.length < 2) continue
-            val key = bigramKey(word.first(), word.last())
+            val key = bigramKey(word.codePointAt(0), word.codePointBefore(word.length))
             userBigramIndex.getOrPut(key) { mutableListOf() }.add(IndexedWord(word, -1))
         }
     }
@@ -81,8 +82,8 @@ class WordPredictor(
                 .map { it.first }
 
         var curr = trieRoot
-        for (char in lower) {
-            curr = curr.children[char] ?: return userMatches.take(5)
+        for (cp in codePointsOf(lower)) {
+            curr = curr.children[cp] ?: return userMatches.take(5)
         }
 
         val dictMatches = curr.topWords
@@ -159,9 +160,10 @@ class WordPredictor(
         pathEnd: PointF,
         actualPathLen: Double,
     ): Double {
+        val wordCodePoints = codePointsOf(word)
         val idealPoints = mutableListOf<PointF>()
-        for (ch in word) {
-            val center = charCenter[ch] ?: return 100.0
+        for (cp in wordCodePoints) {
+            val center = charCenter[cp] ?: return 100.0
             idealPoints.add(center)
         }
 
@@ -181,8 +183,8 @@ class WordPredictor(
         // Order validation
         var orderScore = 0.0
         var pathIdx = 0
-        for (ch in word) {
-            val center = charCenter[ch] ?: continue
+        for (cp in wordCodePoints) {
+            val center = charCenter[cp] ?: continue
             var foundMatch = false
             var minCharDist = Double.MAX_VALUE
 
@@ -215,7 +217,7 @@ class WordPredictor(
     private fun nearbyChars(
         point: PointF,
         radiusKeyUnits: Float,
-    ): List<Char> {
+    ): List<Int> {
         val radius = radiusKeyUnits * keyUnit
         return charCenter.entries
             .filter { dist(point, it.value) < radius }
@@ -224,10 +226,22 @@ class WordPredictor(
     }
 
     private fun bigramKey(
-        first: Char,
-        last: Char,
+        first: Int,
+        last: Int,
     ): Long {
-        return first.code.toLong() shl 16 or last.code.toLong()
+        return first.toLong() shl 21 or last.toLong()
+    }
+
+    private fun codePointsOf(s: String): IntArray {
+        val result = IntArray(s.codePointCount(0, s.length))
+        var i = 0
+        var idx = 0
+        while (i < s.length) {
+            val cp = s.codePointAt(i)
+            result[idx++] = cp
+            i += Character.charCount(cp)
+        }
+        return result
     }
 
     private fun resample(
