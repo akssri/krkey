@@ -221,7 +221,29 @@ object ScriptManager {
         val localModifiers = DEVA_MODIFIERS.map { it.toBrahmiScript(script) }.toSet()
 
         val layers = mutableMapOf<Int, List<List<Any>>>()
-        layers[KeyboardLayer.INDIC] = if (script == BrahmiScript.TAMIL) TAMIL_INDIC_GRID else transliterateGrid(INDIC_GRID, script)
+
+        var indicLayer = if (script == BrahmiScript.TAMIL) TAMIL_INDIC_GRID else transliterateGrid(INDIC_GRID, script)
+        if (script == BrahmiScript.KANNADA) {
+            val longO = "ओ".toBrahmiScript(script)
+            val shortO = "ऒ".toBrahmiScript(script)
+            val longE = "ए".toBrahmiScript(script)
+            val shortE = "ऎ".toBrahmiScript(script)
+
+            indicLayer =
+                indicLayer.map { row ->
+                    row.map { item ->
+                        if (item is Pair<*, *> && item.first == longO && item.second == shortO) {
+                            shortO to longO
+                        } else if (item is Pair<*, *> && item.first == longE && item.second == shortE) {
+                            shortE to longE
+                        } else {
+                            item
+                        }
+                    }
+                }
+        }
+
+        layers[KeyboardLayer.INDIC] = indicLayer
         layers[KeyboardLayer.LATIN] = LATIN_GRID
         layers[KeyboardLayer.SYM] = transliterateGrid(SYM_GRID, script)
         layers[KeyboardLayer.SYM_SHIFT] = transliterateGrid(SYM2_GRID, script)
