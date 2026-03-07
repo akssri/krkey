@@ -92,13 +92,18 @@ class PredictionManager(
 
         val locs =
             allKeys.mapNotNull { k ->
+                if (k.parent == null || k.visibility != android.view.View.VISIBLE) return@mapNotNull null
                 val tuple = k.tag as? Pair<*, *> ?: return@mapNotNull null
                 val char = tuple.first as? String ?: ""
                 if (char.isEmpty()) return@mapNotNull null
 
                 val r = Rect()
                 k.getDrawingRect(r)
-                container.offsetDescendantRectToMyCoords(k, r)
+                try {
+                    container.offsetDescendantRectToMyCoords(k, r)
+                } catch (e: IllegalArgumentException) {
+                    return@mapNotNull null
+                }
                 char.lowercase() to r
             }
 
