@@ -135,7 +135,15 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         symBtn = specialKeyMap[SpecialKey.SYMBOL] as? Button
         spaceBtn = specialKeyMap[SpecialKey.SPACE] as? Button
 
-        gestureDetector = GestureDetector(density)
+        gestureDetector =
+            GestureDetector(
+                density = density,
+                flickVerticalThresholdDp = FLICK_VERTICAL_THRESHOLD_DP,
+                flickVerticalityRatio = FLICK_VERTICALITY_RATIO,
+                flickMinDistanceDp = FLICK_MIN_DISTANCE_DP,
+                swipeStartDistanceDp = SWIPE_START_DISTANCE_DP,
+                swipeForceDistanceDp = SWIPE_FORCE_DISTANCE_DP,
+            )
         keyLocator = KeyLocator(allKeys)
         keyLocator.initialize(layout.findViewById(R.id.keyboard_rows))
 

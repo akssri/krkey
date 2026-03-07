@@ -9,7 +9,15 @@ import kotlin.math.sqrt
  * Unified gesture detection for both Indic (flick) and Latin (gesture typing) modes.
  * Replaces dual code paths with single classification logic.
  */
-class GestureDetector(private val density: Float) {
+class GestureDetector(
+    private val density: Float,
+    private val flickVerticalThresholdDp: Float = 15f,
+    private val flickVerticalityRatio: Float = 0.8f,
+    private val flickMinDistanceDp: Float = 10f,
+    private val swipeStartDistanceDp: Float = 50f,
+    private val swipeForceDistanceDp: Float = 200f,
+    private val tapMaxDistanceDp: Float = 10f,
+) {
     sealed class GestureResult {
         data object Tap : GestureResult()
 
@@ -34,28 +42,28 @@ class GestureDetector(private val density: Float) {
         val totalDistance = calculatePathDistance(path)
         val directDistance = calculateDistance(start, end)
 
-        // Flick gesture: upward movement, 15dp+ vertical, mostly vertical
+        // Flick gesture: upward movement, vertical threshold, mostly vertical
         val verticalDist = start.y - end.y // Positive means upward
         val horizontalDist = abs(end.x - start.x)
 
-        val isUpwardMovement = verticalDist > 15f * density
-        val isMostlyVertical = horizontalDist < abs(verticalDist) * 0.8
-        val hasMinimumMovement = totalDistance > 10f * density
+        val isUpwardMovement = verticalDist > flickVerticalThresholdDp * density
+        val isMostlyVertical = horizontalDist < abs(verticalDist) * flickVerticalityRatio
+        val hasMinimumMovement = totalDistance > flickMinDistanceDp * density
 
         if (isUpwardMovement && isMostlyVertical && hasMinimumMovement) {
             return GestureResult.Flick(path)
         }
 
         // Gesture typing: long horizontal movement or significant total path
-        val isLongHorizontal = horizontalDist > 50f * density
-        val isLongPath = totalDistance > 200f * density
+        val isLongHorizontal = horizontalDist > swipeStartDistanceDp * density
+        val isLongPath = totalDistance > swipeForceDistanceDp * density
 
         if (isLongHorizontal || isLongPath) {
             return GestureResult.GestureTyping(path)
         }
 
         // Default to tap if no other gesture detected
-        return if (directDistance < 10f * density) {
+        return if (directDistance < tapMaxDistanceDp * density) {
             GestureResult.Tap
         } else {
             // Short drag, treat as tap
