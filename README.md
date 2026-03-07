@@ -1,34 +1,60 @@
 # KrKey Android
 
-This is an Android implementation of the KrKey keyboard.
+KrKey is a highly customizable, extensible, and gesture-capable Input Method Editor (IME) for Android, originally inspired by a Sailfish OS prototype. It focuses on providing a unified, ergonomic typing experience for over 30 Brahmi-derived scripts, alongside a fully-featured Latin layout.
+
+## Features
+
+* **Multi-Script Support:** Supports Devanagari, Kannada, Malayalam, Tamil, Telugu, and many more historical/experimental Brahmi scripts (Sharada, Grantha, Siddham, etc.).
+* **QMK-Style Architecture:** The keyboard layout is defined using a declarative, layer-based grid system in `KeyMap.kt`. This allows for extremely easy customization of base and flick-up characters without touching UI code.
+* **Flick Input:** Heavily relies on Japanese-style flick gestures (up-direction only) to access secondary characters (e.g., long vowels, aspirated consonants, uppercase letters), keeping the keyboard interface clean and uncluttered.
+* **Optimized Layouts:** Includes language-specific layout overrides, such as a custom Tamil grid ergonomically designed around corpus consonant/vowel frequencies to maximize bimanual alternation.
+* **Multi-Touch Pecking:** Engineered to support fast, two-thumb pecking without dropping keystrokes.
+* **Gesture Typing:** Integrated swipe-to-type support for the Latin layout, complete with an intelligent auto-spacing engine that respects punctuation and sentence boundaries.
+* **Direct Commit Model:** Uses direct `commitText` operations instead of composing spans, bypassing known cursor jumping and text doubling bugs present in many modern web wrappers and third-party editors (like Perplexity AI).
+* **Spacebar Cursor Control:** Slide left or right on the spacebar to precisely move the text cursor.
+
+## Architecture & Customization
+
+The core layout logic resides in `app/src/main/kotlin/com/akssri/krkey/KeyMap.kt`.
+
+Keys are defined as tuples `(Base to Flick)`. For example, in the Latin grid, `"a" to "A"` means a tap produces 'a', and an upward flick produces 'A'.
+
+To change a character on any layer (Indic, Latin, Symbols), simply edit the corresponding `List<List<Any>>` grid in `KeyMap.kt`.
 
 ## Building
 
-To build the project, run:
+The project is built using Gradle. To compile the APK:
 
 ```bash
+cd krkey-android
 ./gradlew assembleDebug
 ```
 
-(Note: On NixOS, you might need to use `gradle` directly or configure `local.properties` and `gradle.properties` as done in the setup).
+*(Note: If building on NixOS, you may need to configure `local.properties` to point to your specific Android SDK and build tools.)*
+
+### Code Formatting
+
+The project uses `ktlint` to enforce code style. Before submitting changes, run the formatter:
+
+```bash
+./gradlew ktlintFormat
+```
 
 ## Installing
 
-To install on a connected device:
+To install the compiled debug APK on a connected device:
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Enabling
+## Enabling the Keyboard
 
-To enable the keyboard:
+1. Go to **Settings -> System -> Languages & input -> On-screen keyboard -> Manage on-screen keyboards**.
+2. Toggle on **KrKey**.
+3. Tap on a text field to bring up your current keyboard.
+4. Tap the keyboard icon in the bottom navigation bar (or use your device's input switcher) and select KrKey.
 
-1. Go to Settings -> System -> Languages & input -> On-screen keyboard -> Manage on-screen keyboards.
-2. Enable "KrKey Devanagari".
-3. Switch to it by tapping the keyboard icon in the navigation bar when typing, or via Settings.
+## Development Status
 
-## Development
-
-The main logic is in `app/src/main/java/com/akssri/krkey/KrKeyIME.java`.
-The layout is in `app/src/main/res/layout/keyboard_view.xml`.
+This keyboard is under active development. Current focus areas include refining the gesture prediction dictionary, expanding test coverage, and fine-tuning physical touch thresholds.
