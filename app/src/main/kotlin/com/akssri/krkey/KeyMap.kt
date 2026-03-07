@@ -175,14 +175,6 @@ val SYM2_GRID =
         listOf(SpecialKey.SYMBOL, "," to "\"", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "!", SpecialKey.ENTER),
     )
 
-// val TAMIL_INDIC_GRID =
-//     listOf(
-//         listOf("ஒ" to "ஓ", "ப" to "", "ய" to "", "ட" to "", "ஹ" to "ஷ", "ம" to "ற", "ள" to "ழ", "ச" to "ஜ"),
-//         listOf("உ" to "ஊ", "எ" to "ஏ", "அ" to "ஆ", "இ" to "ஈ", "க" to "ங", "ர" to "ற", "ல" to "வ", "த" to "ன"),
-//         listOf(SpecialKey.SHIFT, "ஐ" to "ஔ", "ஂ" to "ஃ", "ம" to "ண", "ந" to "ஞ", "ஸ" to "ஶ", SpecialKey.BACKSPACE),
-//         listOf(SpecialKey.SYMBOL, "," to "'", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "?", SpecialKey.ENTER),
-//     )
-
 val TAMIL_INDIC_GRID =
     listOf(
         listOf("ஒ" to "ஓ", "ஹ" to "ஷ", "ய" to "ஜ", "ஸ" to "ஶ", "ள" to "ழ", "ட" to "ண", "ச" to "ஞ"),
