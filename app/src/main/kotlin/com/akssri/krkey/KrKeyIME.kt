@@ -89,8 +89,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var lastSpaceDragX = 0f
     private var isSpaceDragging = false
 
-    private val prefixable = "़कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळऱऴऩक़ख़ग़ज़ड़ढ़फ़य़अआइईउऊऋॠऌॡएऐओऔ"
-
     override fun onCreate() {
         super.onCreate()
         density = resources.displayMetrics.density
@@ -727,7 +725,9 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             } else {
                 ""
             }
-        keyboardState = keyboardState.withBaseChar(if (prefixable.toBrahmiScript(keyboardState.script).contains(last)) last else "")
+
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+        keyboardState = keyboardState.withBaseChar(if (scriptData.prefixableChars.contains(last)) last else "")
     }
 
     override fun onUpdateSelection(

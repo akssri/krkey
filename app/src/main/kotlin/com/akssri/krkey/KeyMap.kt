@@ -192,6 +192,7 @@ data class ScriptData(
     val consonants: Set<String>,
     val modifiers: Set<String>,
     val vowelToMatraMap: Map<String, String>,
+    val prefixableChars: Set<String>,
     val layers: Map<Int, List<List<Any>>>,
 ) {
     fun layoutFor(mode: com.akssri.krkey.state.InputMode): List<List<Any>> {
@@ -217,8 +218,11 @@ object ScriptManager {
             DEVA_VOWELS.zip(DEVA_MATRAS).associate {
                 it.first.toBrahmiScript(script) to it.second.toBrahmiScript(script)
             }
+        val localVowels = DEVA_VOWELS.map { it.toBrahmiScript(script) }.toSet()
         val localConsonants = DEVA_CONSONANTS.map { it.toBrahmiScript(script) }.toSet()
         val localModifiers = DEVA_MODIFIERS.map { it.toBrahmiScript(script) }.toSet()
+
+        val prefixableChars = localConsonants + localVowels
 
         val layers = mutableMapOf<Int, List<List<Any>>>()
 
@@ -258,7 +262,7 @@ object ScriptManager {
                     }
                 }
             }
-        return ScriptData(script, localConsonants, localModifiers, localVowelToMatra, filteredLayers)
+        return ScriptData(script, localConsonants, localModifiers, localVowelToMatra, prefixableChars, filteredLayers)
     }
 
     private fun transliterateGrid(
