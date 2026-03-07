@@ -14,10 +14,10 @@ enum class SpecialKey {
 enum class BrahmiScript(val scriptName: String, val nativeName: String, val iastName: String, val firstSyllable: String, val isExperimental: Boolean = false) {
     DEVANAGARI("Devanagari", "देवनागरी", "Devanāgarī", "दे"),
     KANNADA("Kannada", "ಕನ್ನಡ", "Kannaḍa", "ಕ"),
-    MALAYALAM("Malayalam", "മലയാളം", "Malayāḷam", "മ"),
     TAMIL("Tamil", "தமிழ்", "Tamiḻ", "த"),
+    GRANTHA("Grantha", "𑌗𑍍𑌰𑌨𑍍𑌥", "Grantha", "𑌗"),
+    MALAYALAM("Malayalam", "മലയാളം", "Malayāḷam", "മ"),
     TELUGU("Telugu", "తెలుగు", "Telugu", "తె"),
-    GRANTHA("Grantha", "𑌗𑍍𑌰𑌨𑍍𑌥", "Grantha", "𑌗", true),
     BENGALI("Bengali", "বাংলা", "Bāṅglā", "বা", true),
     GUJARATI("Gujarati", "ગુજરાતી", "Gujarātī", "ગુ", true),
     ORIYA("Oriya", "ଓଡ଼ିଆ", "Oṛiā", "ଓ", true),
@@ -163,7 +163,7 @@ val SYM_GRID =
     listOf(
         listOf("१" to "1", "२" to "2", "३" to "3", "४" to "4", "५" to "5", "६" to "6", "७" to "7", "८" to "8", "९" to "9", "०" to "0"),
         listOf("*" to "`", "#" to "^", "+" to "|", "-" to "_", "=" to "§", "(" to "{", ")" to "}", "@" to "%", ";" to ":"),
-        listOf(SpecialKey.SHIFT, "ऌ" to "ॡ", "़" to "ॐ", "\\" to "/", "'" to "\"", "[" to "&", "]" to "~", "₹" to "$", SpecialKey.BACKSPACE),
+        listOf(SpecialKey.SHIFT, "ऌ" to "ॡ", "़" to "ॐ", "/" to "\\", "[" to "&", "]" to "~", "₹" to "$", SpecialKey.BACKSPACE),
         listOf(SpecialKey.SYMBOL, "," to "\"", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "!", SpecialKey.ENTER),
     )
 
@@ -175,11 +175,19 @@ val SYM2_GRID =
         listOf(SpecialKey.SYMBOL, "," to "\"", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "!", SpecialKey.ENTER),
     )
 
+// val TAMIL_INDIC_GRID =
+//     listOf(
+//         listOf("ஒ" to "ஓ", "ப" to "", "ய" to "", "ட" to "", "ஹ" to "ஷ", "ம" to "ற", "ள" to "ழ", "ச" to "ஜ"),
+//         listOf("உ" to "ஊ", "எ" to "ஏ", "அ" to "ஆ", "இ" to "ஈ", "க" to "ங", "ர" to "ற", "ல" to "வ", "த" to "ன"),
+//         listOf(SpecialKey.SHIFT, "ஐ" to "ஔ", "ஂ" to "ஃ", "ம" to "ண", "ந" to "ஞ", "ஸ" to "ஶ", SpecialKey.BACKSPACE),
+//         listOf(SpecialKey.SYMBOL, "," to "'", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "?", SpecialKey.ENTER),
+//     )
+
 val TAMIL_INDIC_GRID =
     listOf(
-        listOf("ஒ" to "ஓ", "க" to "", "ப" to "", "ட" to "", "த" to "", "" to "", "ஹ" to "ங", "" to "", "" to "", "ஜ" to ""),
-        listOf("உ" to "ஊ", "எ" to "ஏ", "அ" to "ஆ", "இ" to "ஈ", "ய" to "ள", "ப" to "", "ர" to "ஷ", "வ" to "ல", "த" to ""),
-        listOf(SpecialKey.SHIFT, "ஐ" to "ஔ", "ஂ" to "", "ம" to "ண", "ந" to "ஞ", "" to "", "ச" to "", "ஸ" to "ஶ", SpecialKey.BACKSPACE),
+        listOf("ஒ" to "ஓ", "ஹ" to "ஷ", "ய" to "ஜ", "ஸ" to "ஶ", "ள" to "ழ", "ட" to "ண", "ச" to "ஞ"),
+        listOf("உ" to "ஊ", "எ" to "ஏ", "அ" to "ஆ", "இ" to "ஈ", "க" to "ங", "ர" to "ற", "த" to "ந"),
+        listOf(SpecialKey.SHIFT, "ஐ" to "ஔ", "ஂ" to "ஃ", "வ" to "ல", "ன" to "ந", "ப" to "ம", SpecialKey.BACKSPACE),
         listOf(SpecialKey.SYMBOL, "," to "'", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "?", SpecialKey.ENTER),
     )
 

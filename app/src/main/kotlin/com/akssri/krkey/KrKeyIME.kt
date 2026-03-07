@@ -89,7 +89,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var lastSpaceDragX = 0f
     private var isSpaceDragging = false
 
-    private val prefixable = "़कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळअआइईउऊऋॠऌॡएऐओऔ"
+    private val prefixable = "़कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसहळऱऴऩक़ख़ग़ज़ड़ढ़फ़य़अआइईउऊऋॠऌॡएऐओऔ"
 
     override fun onCreate() {
         super.onCreate()
