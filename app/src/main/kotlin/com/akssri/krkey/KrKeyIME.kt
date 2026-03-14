@@ -18,15 +18,13 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.LinearLayout
 import androidx.core.content.res.ResourcesCompat
-import com.akssri.krkey.gesture.GestureDetector
-import com.akssri.krkey.gesture.TouchHandler
 import com.akssri.krkey.location.KeyLocator
 import com.akssri.krkey.prediction.PredictionManager
 import com.akssri.krkey.state.InputMode
 import com.akssri.krkey.state.KeyboardState
 import com.akssri.krkey.ui.CandidateView
 
-class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
+class KrKeyIME : InputMethodService() {
     // State
     private var keyboardState = KeyboardState()
     private val currentPeckedWord = StringBuilder()
@@ -35,9 +33,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var expectedSelStart: Int = -1
 
     // Components
-    private lateinit var gestureDetector: GestureDetector
     private lateinit var keyLocator: KeyLocator
-    private lateinit var touchHandler: TouchHandler
     private lateinit var predictionManager: PredictionManager
     private lateinit var userDict: UserDictionaryManager
     private var candidateView: CandidateView? = null
@@ -46,7 +42,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
     private var allKeys: List<FlickKeyView> = emptyList() // All character keys
     private var flickKeyPool: List<FlickKeyView> = emptyList() // Same as allKeys but used for layout allocation
     private val specialKeyMap = mutableMapOf<SpecialKey, View>()
-    private val viewPool = mutableMapOf<Int, View>()
 
     private var shiftBtn: Button? = null
     private var symBtn: Button? = null
@@ -125,30 +120,15 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 SpecialKey.ENTER to R.id.key_enter,
             )
         specialIds.forEach { (key, id) ->
-            layout.findViewById<View>(id)?.let {
-                specialKeyMap[key] = it
-                viewPool[id] = it
-            }
+            layout.findViewById<View>(id)?.let { specialKeyMap[key] = it }
         }
 
         shiftBtn = specialKeyMap[SpecialKey.SHIFT] as? Button
         symBtn = specialKeyMap[SpecialKey.SYMBOL] as? Button
         spaceBtn = specialKeyMap[SpecialKey.SPACE] as? Button
 
-        gestureDetector =
-            GestureDetector(
-                density = density,
-                flickVerticalThresholdDp = FLICK_VERTICAL_THRESHOLD_DP,
-                flickVerticalityRatio = FLICK_VERTICALITY_RATIO,
-                flickMinDistanceDp = FLICK_MIN_DISTANCE_DP,
-                swipeStartDistanceDp = SWIPE_START_DISTANCE_DP,
-                swipeForceDistanceDp = SWIPE_FORCE_DISTANCE_DP,
-            )
         keyLocator = KeyLocator(allKeys)
         keyLocator.initialize(layout.findViewById(R.id.keyboard_rows))
-
-        touchHandler = TouchHandler(keyLocator, gestureDetector)
-        setupTouchHandlerCallbacks()
 
         predictionManager = PredictionManager(this, assets, keyLocator, allKeys, layout.findViewById(R.id.keyboard_rows))
         setupCandidateClickListener()
@@ -256,7 +236,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     if (!isSpaceDragging && event.actionMasked == MotionEvent.ACTION_UP) {
                         commitCurrentInput()
                         currentInputConnection?.commitText(" ", 1)
-                        updateBase()
                         updateUI()
                     }
                     isSpaceDragging = false
@@ -279,7 +258,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 keyboardState = keyboardState.withScript(next)
                 prefs.edit().putString("last_script", next.name).apply()
             }
-            updateBase()
             updateUI()
         }
 
@@ -288,7 +266,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             commitCurrentInput()
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-            updateBase()
             updateUI()
         }
 
@@ -298,7 +275,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                 keyboardState = keyboardState.toggleShift() // Shift symbol layer (Layer 2)
             } else {
                 commitCurrentInput()
-                keyboardState = keyboardState.toggleLanguage().also { updateBase() }
+                keyboardState = keyboardState.toggleLanguage()
             }
             updateUI()
         }
@@ -307,91 +284,6 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             keyboardState = keyboardState.toggleSymbol()
             updateUI()
         }
-    }
-
-    private fun setupTouchHandlerCallbacks() {
-        touchHandler.setCallbacks(
-            object : TouchHandler.Callbacks {
-                override fun onKeyPress(
-                    key: FlickKeyView,
-                    displayText: String,
-                ) {
-                    key.showPopup(displayText)
-                }
-
-                override fun onKeyRelease(
-                    key: FlickKeyView,
-                    text: String,
-                    isFlick: Boolean,
-                ) {
-                    onKeyInput(key, text, isFlick)
-                }
-
-                override fun onGestureUpdate(
-                    path: List<PointF>,
-                    isActive: Boolean,
-                ) {
-                    if (isActive) {
-                        gestureTrailView?.visibility = View.VISIBLE
-                        gestureTrailView?.setPoints(path)
-                        candidateView?.showCandidates(emptyList())
-                    } else {
-                        gestureTrailView?.visibility = View.GONE
-                        gestureTrailView?.clear()
-                    }
-                }
-
-                override fun onGestureComplete(path: List<PointF>) {
-                    gestureTrailView?.visibility = View.GONE
-                    performGestureTyping(path)
-                    gestureTrailView?.clear()
-                }
-
-                override fun getKeyDisplayText(
-                    key: FlickKeyView,
-                    isFlickActive: Boolean,
-                ): Pair<String, String> {
-                    val tuple = key.tag as? Pair<*, *> ?: return "" to ""
-                    val scriptData = ScriptManager.getScriptData(keyboardState.script)
-                    val base = tuple.first as String
-                    val flick = tuple.second as String
-
-                    return if (keyboardState.mode is InputMode.LatinNormal) {
-                        val b = if (base.length == 1 && base.first().isLetter()) base.lowercase() else base
-                        val f = if (base.length == 1 && base.first().isLetter()) base.uppercase() else flick
-                        b to f
-                    } else {
-                        formatKeyText(base, keyboardState.currentBaseChar, scriptData) to
-                            formatKeyText(flick, keyboardState.currentBaseChar, scriptData)
-                    }
-                }
-
-                override fun getKeyCommitText(
-                    key: FlickKeyView,
-                    isFlick: Boolean,
-                ): String {
-                    val tuple = key.tag as? Pair<*, *> ?: return ""
-                    val scriptData = ScriptManager.getScriptData(keyboardState.script)
-                    val base = tuple.first as String
-                    val flick = tuple.second as String
-
-                    val raw =
-                        if (keyboardState.mode is InputMode.LatinNormal) {
-                            if (isFlick) {
-                                if (base.length == 1 && base.first().isLetter()) base.uppercase() else flick
-                            } else {
-                                if (base.length == 1 && base.first().isLetter()) base.lowercase() else base
-                            }
-                        } else {
-                            if (isFlick) flick else base
-                        }
-
-                    return getCleanOutput(raw, scriptData)
-                }
-
-                override fun isGestureTypingEnabled() = keyboardState.mode.isLatin() && !keyboardState.mode.isSymbol()
-            },
-        )
     }
 
     private fun getCleanOutput(
@@ -409,11 +301,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
     }
 
-    override fun onKeyInput(
-        view: FlickKeyView,
-        text: String,
-        isFlick: Boolean,
-    ) {
+    private fun onKeyInput(text: String) {
         if (lastGestureWord != null) commitCurrentInput()
 
         val isWordChar = !listOf("।", "॥", ".", ",", "!", "?", "/", "'", "\"", "\\", " ").contains(text)
@@ -430,11 +318,11 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             if (currentPeckedWord.isNotEmpty()) commitCurrentInput()
             currentInputConnection?.commitText(text, 1)
         }
-        updateBase()
         updateUI()
     }
 
     private fun updateUI() {
+        updateBase()
         val mode = keyboardState.mode
         val script = keyboardState.script
         candidateBar?.visibility = if (!mode.isSymbol()) View.VISIBLE else View.GONE
@@ -674,7 +562,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                                 }
                                 gestureTrailView?.visibility = View.VISIBLE
                                 gestureTrailView?.setPoints(state.gesturePath)
-                                showCandidates(emptyList())
+                                candidateView?.showCandidates(emptyList())
                             }
                         }
                         if (state.isGestureTyping) gestureTrailView?.addPoint(px, py)
@@ -717,7 +605,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         val scriptData = ScriptManager.getScriptData(keyboardState.script)
         val isFlick = isFlickGesture(path)
         val raw = if (isFlick) tuple.second as String else tuple.first as String
-        onKeyInput(key, getCleanOutput(raw, scriptData), isFlick)
+        onKeyInput(getCleanOutput(raw, scriptData))
     }
 
     private fun updateBase() {
@@ -749,13 +637,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         val cursorJumped = expectedSelStart != -1 && Math.abs(newSelStart - expectedSelStart) > 2
         if (newSelStart != newSelEnd || cursorJumped) {
-            currentPeckedWord.setLength(0)
-            lastGestureWord = null
-            lastGestureHadSpace = false
-            expectedSelStart = -1
-            showCandidates(emptyList())
+            resetInputState()
         }
-        updateBase()
         updateUI()
     }
 
@@ -776,13 +659,8 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         }
         predictionManager.clearCache()
         if (!restarting || keyboardState.script != oldScript) {
-            currentPeckedWord.setLength(0)
-            lastGestureWord = null
-            lastGestureHadSpace = false
-            expectedSelStart = -1
-            showCandidates(emptyList())
+            resetInputState()
         }
-        updateBase()
         updateUI()
     }
 
@@ -818,23 +696,11 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
         return false
     }
 
-    private fun showCandidates(words: List<String>) {
-        val firstChar = currentPeckedWord.firstOrNull()
-        candidateView?.showCandidates(
-            words,
-            (firstChar != null && firstChar.isUpperCase()) || (currentPeckedWord.isEmpty() && isSentenceStart()),
-        )
-    }
-
     private fun deleteLastChar() {
         val ic = currentInputConnection ?: return
         if (lastGestureWord != null) {
             ic.deleteSurroundingText(lastGestureWord!!.length + (if (lastGestureHadSpace) 1 else 0), 0)
-            lastGestureWord = null
-            lastGestureHadSpace = false
-            expectedSelStart = -1
-            showCandidates(emptyList())
-            updateBase()
+            resetInputState()
             updateUI()
             return
         }
@@ -843,37 +709,33 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
             currentPeckedWord.delete(currentPeckedWord.length - len, currentPeckedWord.length)
             ic.deleteSurroundingText(len, 0)
             if (currentPeckedWord.isEmpty()) {
-                showCandidates(emptyList())
+                candidateView?.showCandidates(emptyList())
                 expectedSelStart = -1
             } else {
                 if (expectedSelStart != -1) expectedSelStart -= len
                 updatePeckedCandidates()
             }
-            updateBase()
             updateUI()
             return
         }
         val text = ic.getTextBeforeCursor(2, 0) ?: return
-        if (text.length == 2 && Character.isSurrogatePair(text[0], text[1])) {
-            ic.deleteSurroundingText(
-                2,
-                0,
-            )
-        } else {
-            ic.deleteSurroundingText(1, 0)
-        }
-        updateBase()
+        val len = if (text.length == 2 && Character.isSurrogatePair(text[0], text[1])) 2 else 1
+        ic.deleteSurroundingText(len, 0)
         updateUI()
+    }
+
+    private fun resetInputState() {
+        currentPeckedWord.setLength(0)
+        lastGestureWord = null
+        lastGestureHadSpace = false
+        expectedSelStart = -1
+        candidateView?.showCandidates(emptyList())
     }
 
     private fun commitCurrentInput() {
         val wordToLearn = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.toString() else lastGestureWord
         if (wordToLearn != null && wordToLearn.length > 1) userDict.learnWord(wordToLearn)
-        currentPeckedWord.setLength(0)
-        lastGestureWord = null
-        lastGestureHadSpace = false
-        expectedSelStart = -1
-        showCandidates(emptyList())
+        resetInputState()
     }
 
     private fun isSentenceStart(): Boolean {
@@ -896,7 +758,7 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
 
     override fun onFinishInput() {
         super.onFinishInput()
-        showCandidates(emptyList())
+        candidateView?.showCandidates(emptyList())
         keyboardState = keyboardState.clearBaseChar()
     }
 
@@ -911,56 +773,26 @@ class KrKeyIME : InputMethodService(), FlickKeyView.OnKeyListener {
                     (lastGestureWord?.length ?: 0) + (if (lastGestureHadSpace) 1 else 0)
                 }
 
-            ic.beginBatchEdit()
-            if (deleteLen > 0) {
-                ic.deleteSurroundingText(deleteLen, 0)
-            }
-
             val space = if (needsPrecedingSpace(deleteLen)) " " else ""
+
+            ic.beginBatchEdit()
+            if (deleteLen > 0) ic.deleteSurroundingText(deleteLen, 0)
             ic.commitText(space + displayWord, 1)
             ic.endBatchEdit()
 
             userDict.learnWord(originalWord)
-            currentPeckedWord.setLength(0)
-            lastGestureWord = null
-            lastGestureHadSpace = false
-            expectedSelStart = -1
-            candidateView?.showCandidates(emptyList())
-            updateBase()
+            resetInputState()
             updateUI()
         }
     }
 
     private fun needsPrecedingSpace(skipCount: Int = 0): Boolean {
         val ic = currentInputConnection ?: return false
-        // Get more text to account for the skipCount
         val text = ic.getTextBeforeCursor(50 + skipCount, 0)?.toString() ?: ""
-
-        val actualText =
-            if (skipCount > 0 && text.length >= skipCount) {
-                text.substring(0, text.length - skipCount)
-            } else if (skipCount > 0) {
-                ""
-            } else {
-                text
-            }
-
-        if (actualText.isEmpty()) return false
-
-        // If the last character is already whitespace, don't add another space
-        if (Character.isWhitespace(actualText.last())) return false
-
-        val trimmed = actualText.trimEnd()
-        if (trimmed.isEmpty()) return false
-
-        // If the last non-whitespace character is sentence-ending punctuation,
-        // we are at the start of a new sentence and don't prepend a space.
-        val lastChar = trimmed.last()
-        val isAtSentenceStart =
-            lastChar == '.' || lastChar == '?' || lastChar == '!' ||
-                lastChar == '।' || lastChar == '॥'
-
-        return !isAtSentenceStart
+        if (text.length <= skipCount) return false
+        val last = text[text.length - 1 - skipCount]
+        if (Character.isWhitespace(last)) return false
+        return last != '.' && last != '?' && last != '!' && last != '।' && last != '॥'
     }
 
     private fun isFlickGesture(path: List<PointF>): Boolean {

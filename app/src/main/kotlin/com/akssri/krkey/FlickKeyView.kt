@@ -116,13 +116,4 @@ class FlickKeyView
             hintTextView.typeface = typeface
             popupTextView?.typeface = typeface
         }
-
-        // We keep onKeyListener interface for the IME but remove logic from here
-        interface OnKeyListener {
-            fun onKeyInput(
-                view: FlickKeyView,
-                text: String,
-                isFlick: Boolean,
-            )
-        }
     }
