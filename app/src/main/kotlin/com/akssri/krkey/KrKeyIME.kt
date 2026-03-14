@@ -342,7 +342,7 @@ class KrKeyIME : InputMethodService() {
 
         symBtn?.text =
             if (mode.isSymbol()) {
-                if (mode.isLatin()) "abc" else "ಅಲ್".toBrahmiScript(script)
+                if (mode.isLatin()) "abc" else "अल्".toBrahmiScript(script)
             } else {
                 "१२३".toBrahmiScript(script)
             }
