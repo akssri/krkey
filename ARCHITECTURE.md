@@ -2,16 +2,14 @@
 
 ## Overview
 
-krkey-android is a Devanagari IME (Input Method Editor) with Japanese-style flick gestures and Latin gesture typing. The architecture was refactored from a monolithic 500-line `KrKeyIME.kt` to a clean, layered, testable design.
+krkey-android is a multi-script Brahmic IME (Input Method Editor) with Japanese-style flick gestures and Latin gesture typing. It uses a pure commit-based input model (no composing text) and multi-pointer touch tracking.
 
 ## Architecture Layers
-
-The application is organized into four distinct layers:
 
 ```
 ┌──────────────────────────────────────────┐
 │         UI Layer (Views)                 │
-│  FlickKeyView, CandidateView             │
+│  FlickKeyView, CandidateView            │
 └──────────────────────────────────────────┘
               ↓
 ┌──────────────────────────────────────────┐
@@ -20,14 +18,14 @@ The application is organized into four distinct layers:
 └──────────────────────────────────────────┘
               ↓
 ┌──────────────────────────────────────────┐
-│    Gesture & Input Handling Layer        │
-│  GestureDetector, TouchHandler,          │
+│    Input Handling Layer                  │
+│  KrKeyIME (handleGlobalTouch),           │
 │  KeyLocator                              │
 └──────────────────────────────────────────┘
               ↓
 ┌──────────────────────────────────────────┐
 │     Key Resolution Layer                 │
-│  KeyResolver, Key, KeyData               │
+│  KeyMap, KeyConfig, ScriptData           │
 └──────────────────────────────────────────┘
               ↓
 ┌──────────────────────────────────────────┐
@@ -46,91 +44,61 @@ The application is organized into four distinct layers:
 
 **Key Classes**:
 - **`InputMode`** (sealed class)
-  - `IndicNormal`, `IndicSymbol`, `IndicSymbolShifted`
-  - `LatinNormal`, `LatinShifted`, `LatinSymbol`
+  - `IndicNormal`, `LatinNormal`, `LatinShifted`
+  - `Symbol(fromLatin: Boolean)`, `SymbolShifted(fromLatin: Boolean)`
   - Helper methods: `isLatin()`, `isSymbol()`, `isShifted()`
 
 - **`KeyboardState`** (data class)
   - Fields: `mode: InputMode`, `script: BrahmiScript`, `currentBaseChar: String`, `isShiftLocked: Boolean`
   - Transformation methods (return new instances):
     - `toggleShift()` - Smart shift based on mode
-    - `toggleSymbol(wasLatinMode)` - Remembers Latin/Indic context
+    - `toggleSymbol()` - Remembers Latin/Indic context via `fromLatin` flag
+    - `toggleLanguage()` - Switch between Indic and Latin
     - `withBaseChar(char)` - Update composition base
     - `withScript(script)` - Switch scripts
     - `clearBaseChar()` - Clear after commit
 
-**Benefits**:
-- Replaces 5+ boolean flags with type-safe sealed class
-- Immutable - no accidental state corruption
-- Clear state transitions
-- Easy to test
-
 ---
 
-### 2. Gesture & Input Handling Layer (`gesture/`, `location/`)
+### 2. Input Handling Layer (`KrKeyIME.kt`, `location/`)
 
-**Purpose**: Detects and handles touch gestures efficiently
+**Purpose**: Multi-pointer touch handling with inline gesture detection
 
-**Key Classes**:
+**Key Components**:
 
-#### `GestureDetector`
-- **Purpose**: Classifies touch paths into gesture types
-- **Method**: `detectGesture(path: List<PointF>) → GestureResult`
-- **Results**:
-  - `Tap` - Short, stationary
-  - `Flick` - Upward 15dp+, mostly vertical
-  - `GestureTyping` - Long horizontal 50dp+ or very long path
-- **Benefits**: Single unified detector replaces dual code paths
+#### `KrKeyIME.handleGlobalTouch()`
+- **Purpose**: Unified touch handler for all character keys
+- **Tracking**: `activePointers` map of `PointerState` keyed by `pointerId`
+- **Gestures**: Inline flick detection (vertical threshold) and swipe-to-gesture-type detection (horizontal distance)
+- **Exclusive swipe**: When gesture typing activates, all other active touches are canceled
 
 #### `KeyLocator`
 - **Purpose**: Fast key lookup with cached bounds
 - **Methods**:
-  - `initialize(container)` - Build cache once
+  - `initialize(container, keys)` - Build cache, accepts filtered key list for dynamic layouts
   - `findKeyAt(x, y)` - O(1) lookup
   - `rebuildCache()` - On layout changes
-- **Performance**: ~60% reduction in touch event processing time
-
-#### `TouchHandler`
-- **Purpose**: Manages touch lifecycle (DOWN → MOVE → UP/CANCEL)
-- **Delegates to**: `GestureDetector` for classification, `KeyLocator` for finding keys
-- **Callbacks**: `onKeyPress`, `onKeyRelease`, `onGestureUpdate`, `onGestureComplete`
-- **Benefits**: Clean separation of touch handling from IME logic
 
 ---
 
-### 3. Key Resolution Layer (`keys/`)
+### 3. Key Resolution Layer (`KeyMap.kt`)
 
-**Purpose**: Resolves key data to display/commit text based on keyboard state
+**Purpose**: Defines key data, script configurations, and layout grids
 
 **Key Classes**:
 
-#### `KeyData` / `KeyVariants`
-- **Purpose**: Stores key text variants
-- **Replaces**: 16-parameter `KeyConfig`
-- **Structure**:
-  ```kotlin
-  KeyData(id, baseText, flickText, KeyVariants(...))
-  KeyVariants(matraBase, matraFlick, symBase, symFlick, ...)
-  ```
+#### `KeyConfig`
+- **Purpose**: Stores all text variants for a key across layers
+- **Fields**: `base`, `flick`, `symBase`, `symFlick`, `sym2Base`, `sym2Flick`, `latinBase`, `latinFlick`, `latinSymBase`, `latinSymFlick`, `latinSym2Base`, `latinSym2Flick`
+- **Method**: `getResolvedStrings(mode, currentBaseChar, scriptData)` - Resolves display/commit text with fallback chains
 
-#### `KeyResolver` (interface + implementations)
-- **Purpose**: Polymorphic key resolution
-- **Implementations**:
-  - `SimpleKeyResolver` - Punctuation, symbols (~25 lines)
-  - `VowelKeyResolver` - Shows matra after consonant (~30 lines)
-  - `ModifierKeyResolver` - Prefixes with base/circle (~20 lines)
-  - `ConsonantKeyResolver` - Standard consonants (~10 lines)
-- **Benefits**: 45-line monolithic method → 4 focused classes
+#### `ScriptData`
+- **Purpose**: Per-script configuration (layout grids, prefixable chars, vowel maps)
+- **Method**: `layoutFor(mode)` - Returns the appropriate layout grid for the current input mode
 
-#### `Key`
-- **Purpose**: Wrapper combining data + resolver
-- **Factory methods**: `Key.simple()`, `Key.vowel()`, `Key.modifier()`, `Key.consonant()`
-- **Method**: `resolve(isLatin, isSymbol, ...) → Pair<String, String>`
-
-**Benefits**:
-- Testable in isolation
-- Easy to add new key types
-- Clear separation of data and logic
+#### `BrahmiScript` (enum)
+- **Purpose**: Enumerates supported scripts with transliteration offsets
+- **Scripts**: Devanagari, Kannada, Telugu, Tamil, Malayalam, Gujarati, Gurmukhi, Bengali, Odia, Siddham, Grantha, Sharada, Brahmi
 
 ---
 
@@ -138,50 +106,28 @@ The application is organized into four distinct layers:
 
 **Purpose**: Manages word prediction lifecycle
 
-**Key Classes**:
-
 #### `PredictionManager`
 - **Purpose**: Centralized predictor lifecycle and caching
 - **Caching**: Per (isLatin, script) mode
 - **Methods**:
   - `ensurePredictor(isLatin, script, learnedWords)` - Lazy init + cache
-  - `getPrefixMatches(prefix)` - Prefix completions
+  - `getPrefixMatches(prefix)` - Prefix completions for pecked input
   - `predictGesture(path)` - Gesture typing prediction
-- **Performance**:
-  - Zero rebuilding on mode switches
-  - Static dictionary caching
-  - ~300-500ms saved per mode switch
 
-#### `WordPredictor` (unchanged)
-- **Purpose**: Core prediction logic
-- **Features**:
-  - Prefix matching with trie
-  - Gesture path scoring
-  - Learned words integration
+#### `WordPredictor`
+- **Purpose**: Core prediction logic using Unicode code points (not UTF-16 chars)
+- **Features**: Prefix matching with trie, gesture path scoring, learned words integration
 
 ---
 
-### 5. UI Layer (`ui/`)
-
-**Purpose**: Views with self-contained rendering
-
-**Key Classes**:
+### 5. UI Layer (`ui/`, `FlickKeyView.kt`)
 
 #### `CandidateView`
-- **Purpose**: RecyclerView-based candidate display
-- **Replaces**: Dynamic TextView creation
-- **Benefits**:
-  - View recycling - no GC pauses
-  - Smooth scrolling
-  - ~120 lines vs scattered logic
+- **Purpose**: RecyclerView-based candidate display with view recycling
+- **Callback**: `setOnCandidateClickListener { displayWord, originalWord -> ... }`
 
-#### `FlickKeyView` (enhanced)
-- **Purpose**: Individual keyboard key
-- **Features**:
-  - Popup display
-  - Visual state (base/flick)
-  - Typeface management
-- **Future**: Optional self-contained gesture handling
+#### `FlickKeyView`
+- **Purpose**: Individual keyboard key with popup display and visual state
 
 ---
 
@@ -190,154 +136,82 @@ The application is organized into four distinct layers:
 ### 1. User Taps Key (Indic Mode)
 
 ```
-User touch
+User touch → handleGlobalTouch(ACTION_DOWN)
     ↓
-TouchHandler.handleDown()
+KeyLocator.findKeyAt(x, y)
     ↓
-KeyLocator.findKeyAt(x, y) ← (cached bounds, O(1))
+FlickKeyView.showPopup(base text)
     ↓
-KeyboardState → toOldFlags() → KeyConfig.getResolvedStrings()
+handleGlobalTouch(ACTION_UP)
     ↓
-FlickKeyView.showPopup(text)
+handleFlickOrTap() → isFlickGesture(path)?
+    ↓
+onKeyInput(text) → ic.commitText(text, 1)
+    ↓
+updateUI() → updateBase() + refresh key labels
 ```
 
-### 2. User Flicks Upward
+### 2. Gesture Typing (Latin Mode)
 
 ```
-User swipes up
+User drags horizontally → ACTION_MOVE
     ↓
-TouchHandler.handleMove()
+pathDist > SWIPE_START_DISTANCE? → state.isGestureTyping = true
     ↓
-GestureDetector.detectGesture(path) → Flick
+Cancel other active pointers, show gesture trail
     ↓
-FlickKeyView.showPopup(flickText)
+ACTION_UP → performGestureTyping(path)
     ↓
-TouchHandler.handleUp() → onKeyRelease callback
+PredictionManager.predictGesture(path) → candidates
     ↓
-KrKeyIME.onKeyInput(text, isFlick=true)
+needsPrecedingSpace()? → prepend " "
     ↓
-InputConnection.commitText(text, 1)
+ic.commitText(space + word, 1)
+    ↓
+CandidateView.showCandidates(words)
 ```
 
-### 3. Gesture Typing (Latin Mode)
+### 3. Candidate Selection
 
 ```
-User drags horizontally
+User taps candidate → setupCandidateClickListener
     ↓
-TouchHandler.handleMove()
+needsPrecedingSpace(deleteLen) ← called BEFORE batch edit
     ↓
-GestureDetector.detectGesture(path) → GestureTyping
+ic.beginBatchEdit()
+ic.deleteSurroundingText(deleteLen, 0)
+ic.commitText(space + displayWord, 1)
+ic.endBatchEdit()
     ↓
-onGestureUpdate(path, isActive=true)
-    ↓
-GestureTrailView.setPoints(path)
-    ↓
-TouchHandler.handleUp() → onGestureComplete callback
-    ↓
-PredictionManager.ensurePredictor() ← (lazy, cached)
-    ↓
-PredictionManager.predictGesture(path)
-    ↓
-WordPredictor.predict(path) → List<(word, score)>
-    ↓
-CandidateView.showCandidates(words, shouldCaps)
-```
-
-### 4. Mode Switch (Shift/Symbol)
-
-```
-User taps shift/symbol button
-    ↓
-KeyboardState.toggleShift() / toggleSymbol()
-    ↓
-New KeyboardState instance created (immutable)
-    ↓
-updateUI() → reads keyboardState
-    ↓
-allKeys.forEach { cfg.getResolvedStrings(...) }
-    ↓
-FlickKeyView.setVisualState(base, flick, false)
+resetInputState() + updateUI()
 ```
 
 ---
 
-## Performance Optimizations
+## Key Design Decisions
 
-### KeyLocator Caching
-- **Problem**: `findKeyAt()` called on every touch MOVE, iterating all keys
-- **Solution**: Cache key bounds on layout, O(1) lookup
-- **Impact**: ~60% reduction in touch event processing
+### Pure Commit Model
+No `setComposingText` — all text goes through `commitText` to avoid doubling bugs in third-party webviews (e.g., Perplexity AI).
 
-### PredictionManager Caching
-- **Problem**: Predictor rebuilt on every mode switch
-- **Solution**: Cache predictors per (isLatin, script)
-- **Impact**: Zero mode-switch stutter, ~300-500ms saved
+### Smart Auto-Spacing
+`needsPrecedingSpace(skipCount)` checks the character before the cursor (skipping `skipCount` chars for pre-deletion queries). Prepends space unless at field start, after whitespace, or after sentence-ending punctuation (`.?!।॥`).
 
-### CandidateView RecyclerView
-- **Problem**: Dynamic TextView creation/destruction on candidate updates
-- **Solution**: RecyclerView with ViewHolder pattern
-- **Impact**: No GC pauses, smooth scrolling
+### Unified Symbol Modes
+`Symbol(fromLatin: Boolean)` replaces separate `IndicSymbol`/`LatinSymbol` modes. The `fromLatin` flag preserves context for returning to the correct base layer and selecting the right numeral style.
+
+### Dynamic Layouts
+`rebuildKeyboardGrid()` shuffles `FlickKeyView` instances from a pool into rows based on the current layout grid. `allKeys` is filtered to only active keys, preventing crashes from orphaned views in `KeyLocator`.
 
 ---
 
-## Testing Strategy
+## Build
 
-### Unit Tests
-- **KeyboardStateTest** (17 tests) - State transitions, immutability
-- **KeyResolverTest** (15 tests) - Vowel, modifier, simple resolution
-- **GestureDetectorTest** (deferred) - Needs instrumented testing
-
-### Manual Testing Checklist
-1. ✓ Type in Devanagari mode (flick gestures)
-2. ✓ Switch to Latin mode (EN button)
-3. ✓ Gesture typing in Latin mode
-4. ✓ Toggle symbol mode (१२३ button)
-5. ✓ Switch scripts (globe key)
-6. ✓ Vowel+consonant composition (क + ु → कु)
-7. ✓ Word prediction and candidates
-8. ✓ No touch latency or GC pauses
-
----
-
-## Migration Notes
-
-The refactoring was done in phases while maintaining backward compatibility:
-
-### Phase 1: State Machine & Separation
-- Created `InputMode`, `KeyboardState`
-- Added `GestureDetector`, `TouchHandler`, `KeyLocator`
-- Old boolean flags kept alongside
-
-### Phase 2: KeyConfig Decomposition
-- Created `KeyData`, `KeyResolver`, `Key`
-- Old `KeyConfig` kept for compatibility
-- New `newKeyMap` created alongside `configMap`
-
-### Phase 3: View Self-Containment & Performance
-- Created `CandidateView`, `PredictionManager`
-- Replaced candidate LinearLayout
-- Old `ensurePredictor()` removed
-
-### Phase 4: Cleanup
-- Removed old boolean flags
-- Removed sync methods
-- Removed old predictor code
-- All code now uses `keyboardState`
-
----
-
-## Future Enhancements
-
-### Short-term
-- Add instrumented tests for `GestureDetector`
-- FlickKeyView self-contained gesture handling
-- Migrate from `KeyConfig` to `Key` (use `newKeyMap`)
-
-### Long-term
-- Multi-tap fallback for devices without gesture support
-- Customizable gesture thresholds in settings
-- A11y improvements (TalkBack support)
-- Theme support (dark mode)
+- **Kotlin**: 2.1.0
+- **AGP**: 8.7.3
+- **Gradle**: 8.14.4
+- **compileSdk/targetSdk**: 36, **minSdk**: 26
+- **JVM target**: 17
+- **Dev environment**: Nix flake (`nix develop`)
 
 ---
 
@@ -345,47 +219,24 @@ The refactoring was done in phases while maintaining backward compatibility:
 
 ```
 app/src/main/kotlin/com/akssri/krkey/
-├── KrKeyIME.kt                    # Main IME service
+├── KrKeyIME.kt                    # Main IME service (~800 lines)
 ├── state/
 │   ├── InputMode.kt               # Sealed class for modes
 │   └── KeyboardState.kt           # Immutable state
 ├── gesture/
-│   ├── GestureDetector.kt         # Gesture classification
-│   └── TouchHandler.kt            # Touch lifecycle
+│   ├── GestureDetector.kt         # Gesture classification (unused, kept for reference)
+│   └── TouchHandler.kt            # Touch lifecycle (unused, kept for reference)
 ├── location/
 │   └── KeyLocator.kt              # Cached key lookup
-├── keys/
-│   ├── KeyData.kt                 # Key data classes
-│   ├── KeyResolver.kt             # Resolution interface + impls
-│   └── Key.kt                     # Wrapper with factories
 ├── prediction/
 │   └── PredictionManager.kt       # Predictor lifecycle
 ├── ui/
-│   ├── CandidateView.kt           # RecyclerView candidates
-│   └── FlickKeyView.kt            # Individual key view
-├── KeyMap.kt                      # Key configuration
+│   └── CandidateView.kt           # RecyclerView candidates
+├── KeyMap.kt                      # Key configuration, layouts, script data
+├── FlickKeyView.kt                # Individual key view
 ├── WordPredictor.kt               # Prediction logic
 ├── UserDictionaryManager.kt       # Learned words
 ├── GestureTrailView.kt            # Trail rendering
+├── GeneratedMaps.kt               # Generated transliteration maps
 └── SettingsActivity.kt            # App settings
-
-app/src/test/kotlin/com/akssri/krkey/
-├── state/
-│   └── KeyboardStateTest.kt       # State tests (17)
-└── keys/
-    └── KeyResolverTest.kt         # Resolver tests (15)
 ```
-
----
-
-## Key Principles
-
-1. **Immutability**: `KeyboardState` transformations return new instances
-2. **Separation of Concerns**: Each layer has a single responsibility
-3. **Testability**: Small, focused classes with clear dependencies
-4. **Performance**: Caching and view recycling where it matters
-5. **Maintainability**: 500-line monolith → layered architecture
-
----
-
-**Built with**: Kotlin 1.9.22, Android SDK 26-34, Jetpack Compose (none), Traditional Views
