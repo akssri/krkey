@@ -5,29 +5,30 @@ plugins {
 }
 
 android {
-    namespace 'com.akssri.krkey'
-    compileSdk 34
+    namespace = 'com.akssri.krkey'
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId "com.akssri.krkey"
-        minSdk 26
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        applicationId = "com.akssri.krkey"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled = false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
     }
 }
 

@@ -1,5 +1,5 @@
 {
-  description = "Gadgetbridge Android development environment";
+  description = "KrKey Android development environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -44,7 +44,7 @@
           ];
 
           shellHook = ''
-            echo "🤖 Gadgetbridge development environment"
+            echo "🤖 KrKey development environment"
 
             # Set JAVA_HOME for Gradle
             export JAVA_HOME=${pkgs.jdk21}/lib/openjdk
@@ -61,6 +61,9 @@
             # Gradle configuration
             export GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.project.android.aapt2FromMavenOverride=$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2"
 
+            # Generate local.properties from nix environment
+            echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
             echo "Java version: $(java -version 2>&1 | head -n1)"
             echo "✅ Environment ready!"
             echo "• JAVA_HOME: $JAVA_HOME"
@@ -68,10 +71,10 @@
             echo "• Available commands: ./gradlew (alias), adb, aapt2"
             echo ""
             echo "🚀 Quick start:"
-            echo "  ./gradlew assembleMainlineDebug    # Build debug APK"
-            echo "  ./gradlew installMainlineDebug     # Install to connected device"
-            echo "  ./gradlew test                     # Run tests"
-            echo "  ./gradlew lint                     # Run lint checks"
+            echo "  ./gradlew assembleDebug    # Build debug APK"
+            echo "  ./gradlew installDebug     # Install to connected device"
+            echo "  ./gradlew test             # Run tests"
+            echo "  ./gradlew ktlintFormat     # Format code"
           '';
         };
       };
