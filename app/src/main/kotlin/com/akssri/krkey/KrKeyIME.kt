@@ -94,7 +94,7 @@ class KrKeyIME : InputMethodService() {
     private var isSpaceDragging = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key in listOf("keyboard_height_landscape", "key_width_dp")) {
+        if (key in listOf("keyboard_height_landscape", "key_width_dp", "keyboard_opacity_landscape", "landscape_overlay", "landscape_split")) {
             if (keyboardRowsContainer != null) {
                 setInputView(onCreateInputView())
             }
@@ -129,8 +129,8 @@ class KrKeyIME : InputMethodService() {
         val themedContext = ContextThemeWrapper(this, R.style.Theme_KrKey)
         val layout = LayoutInflater.from(themedContext).inflate(R.layout.keyboard_view, null) as LinearLayout
 
+        val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
         if (landscapeMode) {
-            val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
             val heightDp = prefs.getInt("keyboard_height_landscape", 160)
             val containerHeightPx = (heightDp * density).toInt()
             keyHeightPx = (heightDp / 4.4f * density).toInt()
@@ -141,9 +141,13 @@ class KrKeyIME : InputMethodService() {
             )
 
             // Compute split gap weight based on target key width
-            val targetKeyWidthDp = prefs.getInt("key_width_dp", 42).toFloat()
-            val maxKeysInRow = 10 // widest row (row 1)
-            splitGapWeight = ((screenWidthDp - maxKeysInRow * targetKeyWidthDp) / targetKeyWidthDp).coerceAtLeast(0f)
+            if (prefs.getBoolean("landscape_split", true)) {
+                val targetKeyWidthDp = prefs.getInt("key_width_dp", 42).toFloat()
+                val maxKeysInRow = 10 // widest row (row 1)
+                splitGapWeight = ((screenWidthDp - maxKeysInRow * targetKeyWidthDp) / targetKeyWidthDp).coerceAtLeast(0f)
+            } else {
+                splitGapWeight = 0f
+            }
         } else {
             keyHeightPx = (50f * density).toInt()
             splitGapWeight = 0f
@@ -184,9 +188,33 @@ class KrKeyIME : InputMethodService() {
         val rowsContainer = layout.findViewById<View>(R.id.keyboard_rows).parent as View
         rowsContainer.setOnTouchListener { _, event -> handleGlobalTouch(event) }
 
+        if (landscapeMode && prefs.getBoolean("landscape_overlay", true)) {
+            layout.alpha = prefs.getInt("keyboard_opacity_landscape", 80) / 100f
+        }
+
         currentLayoutGrid = null // Force a rebuild of the grid to populate tags
         updateUI()
         return layout
+    }
+
+    override fun onEvaluateFullscreenMode(): Boolean = false
+
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        val overlayEnabled = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
+            .getBoolean("landscape_overlay", true)
+        if (landscapeMode && overlayEnabled) {
+            val decorView = window?.window?.decorView ?: return
+            // Push content inset to the bottom so the app is not resized
+            outInsets.contentTopInsets = decorView.height
+            outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+            outInsets.touchableRegion.set(
+                0,
+                outInsets.visibleTopInsets,
+                decorView.width,
+                decorView.height
+            )
+        }
     }
 
     private fun loadFonts() {
@@ -604,9 +632,10 @@ class KrKeyIME : InputMethodService() {
                                 }
                             }
 
-                            if ((pathDist(state.gesturePath) > SWIPE_START_DISTANCE_DP * density && !isLikelyFlick) ||
+                            if (splitGapWeight == 0f &&
+                                ((pathDist(state.gesturePath) > SWIPE_START_DISTANCE_DP * density && !isLikelyFlick) ||
                                 (movedToNewKey && !isLikelyFlick) ||
-                                pathDist(state.gesturePath) > SWIPE_FORCE_DISTANCE_DP * density
+                                pathDist(state.gesturePath) > SWIPE_FORCE_DISTANCE_DP * density)
                             ) {
                                 state.isGestureTyping = true
                                 // Cancel all other active touches to prevent accidental pecks while swiping

@@ -59,6 +59,15 @@
                     android:progress="40"
                     android:layout_marginBottom="16dp" />
 
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switch_split"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Split layout"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginBottom="12dp" />
+
                 <TextView
                     android:id="@+id/label_key_width"
                     android:layout_width="wrap_content"
@@ -73,6 +82,31 @@
                     android:layout_height="wrap_content"
                     android:max="40"
                     android:progress="12"
+                    android:layout_marginBottom="16dp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switch_overlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Overlay mode"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:id="@+id/label_opacity"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Opacity: 80%"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorPrimary" />
+
+                <SeekBar
+                    android:id="@+id/seekbar_opacity"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="100"
+                    android:progress="80"
                     android:layout_marginBottom="8dp" />
             </LinearLayout>
         </LinearLayout>
