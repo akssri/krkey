@@ -2,6 +2,8 @@
 
 KrKey is a highly customizable, extensible, and gesture-capable Input Method Editor (IME) for Android, originally inspired by a Sailfish OS prototype. It focuses on providing a unified, ergonomic typing experience for over 30 Brahmi-derived scripts, alongside a fully-featured Latin layout.
 
+LICENSE: [[https://www.gnu.org/licenses/gpl-3.0.en.html][GPLv3]].
+
 ** Features
 
 - *Multi-Script Support:* Supports Devanagari, Kannada, Malayalam, Tamil, Telugu, and many more historical/experimental Brahmi scripts (Sharada, Grantha, Siddham, etc.).
