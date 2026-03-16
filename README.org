@@ -4,12 +4,6 @@ KrKey is a highly customizable, extensible, and gesture-capable Input Method Edi
 
 LICENSE: [[https://www.gnu.org/licenses/gpl-3.0.en.html][GPLv3]].
 
-#+ATTR_ORG: :width 512
-[[file:screenshots/1.png]]
-
-#+ATTR_ORG: :width 512
-[[file:screenshots/2.png]]
-
 ** Features
 
 - *Multi-Script Support:* Supports Devanagari, Kannada, Malayalam, Tamil, Telugu, and many more historical/experimental Brahmi scripts (Sharada, Grantha, Siddham, etc.).
@@ -20,6 +14,8 @@ LICENSE: [[https://www.gnu.org/licenses/gpl-3.0.en.html][GPLv3]].
 - *Gesture Typing:* Integrated swipe-to-type support for the Latin layout, complete with an intelligent auto-spacing engine that respects punctuation and sentence boundaries.
 - *Direct Commit Model:* Uses direct =commitText= operations instead of composing spans, bypassing known cursor jumping and text doubling bugs present in many modern web wrappers and third-party editors (like Perplexity AI).
 - *Spacebar Cursor Control:* Slide left or right on the spacebar to precisely move the text cursor.
+- *Landscape Overlay Mode:* In landscape, the keyboard overlays the app with configurable transparency (0–100%) instead of squishing it into a tiny strip. Touches above the keyboard pass through to the app.
+- *Split Layout:* Optional split keyboard in landscape with adjustable key width for comfortable thumb typing on wide screens. Gesture typing is automatically disabled in split mode.
 
 ** Architecture & Customization
 
@@ -66,3 +62,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ** Development Status
 
 This keyboard is under active development. Current focus areas include refining the gesture prediction dictionary, expanding test coverage, and fine-tuning physical touch thresholds.
+
+** Screenshots
+
+#+ATTR_ORG: :width 512
+[[file:screenshots/1.png]]
+
+#+ATTR_ORG: :width 512
+[[file:screenshots/2.png]]
