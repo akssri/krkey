@@ -14,6 +14,7 @@ Create an extensible multi-script Brahmic IME for Android using Japanese-style f
 - **Latin Layer Casing:** When dynamically applying casing in Latin mode (base=lower, flick=upper), the logic MUST verify `base.first().isLetter()`. Otherwise, punctuation tuples (e.g., `,` to `'`) are erroneously overwritten and appear blank.
 - **Smart Auto-Spacing:** Use a "prepending" model `needsPrecedingSpace(skipCount)`. The keyboard checks text before the cursor (ignoring pending deletions via skipCount) and prepends a space to predicted words unless it's the start of a field, right after a newline, or right after sentence-ending punctuation (`.?!।॥`). Gesture backspacing cleanly undoes this via `lastGestureHadSpace`.
 - **Unified Symbol Modes:** `Symbol(fromLatin: Boolean)` and `SymbolShifted(fromLatin: Boolean)` replace separate Indic/Latin symbol modes. The `fromLatin` flag preserves context for returning to the correct base layer and selecting the right numeral style.
+- **Landscape Overlay Insets:** In `onComputeInsets`, the touchable region width MUST use `decorView.width` (not `displayMetrics.widthPixels`) — the latter doesn't account for side navigation bars/cutouts, causing dead touch zones on the right side in landscape.
 
 ## Key Domain Knowledge
 - **Build:** Kotlin 2.1.0, AGP 8.7.3, compileSdk/targetSdk 36, minSdk 26, JVM target 17.
@@ -41,3 +42,6 @@ Create an extensible multi-script Brahmic IME for Android using Japanese-style f
 - **SDK 36 Migration:** Upgraded AGP 8.2.0→8.7.3, Kotlin 1.9.22→2.1.0, compileSdk/targetSdk 34→36, JVM 1.8→17. Fixed Nix flake for SDK 36 build-tools.
 - **Nix Flake Setup:** Configured reproducible dev environment with `nix develop`, auto-generated `local.properties`, aapt2 override via `GRADLE_OPTS`.
 - **Unified Symbol Modes:** Replaced separate `IndicSymbol`/`LatinSymbol` modes with `Symbol(fromLatin: Boolean)` to preserve context when switching.
+- **Landscape Overlay Mode:** Added `onComputeInsets` override that sets `contentTopInsets = decorView.height` + `TOUCHABLE_INSETS_REGION` so the keyboard overlays the app instead of resizing it. `onEvaluateFullscreenMode() = false` suppresses the IME's built-in fullscreen extract editor. Whole-view `layout.alpha` controls transparency (0–100% via `keyboard_opacity_landscape` pref). Both overlay and opacity are gated on `landscape_overlay` boolean pref.
+- **Split Layout Toggle:** `landscape_split` boolean pref gates the split gap computation. When split is off, `splitGapWeight = 0f` and no spacer is inserted. Gesture typing is disabled when `splitGapWeight > 0f` (the gap between halves would break gesture paths).
+- **Settings Switches:** Added `SwitchCompat` toggles for "Split layout" and "Overlay mode" in the Landscape section of `SettingsActivity`. Each switch grays out its dependent slider (key width / opacity) when off via `alpha = 0.4f` + `isEnabled = false`.
