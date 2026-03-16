@@ -4,6 +4,12 @@ KrKey is a highly customizable, extensible, and gesture-capable Input Method Edi
 
 LICENSE: [[https://www.gnu.org/licenses/gpl-3.0.en.html][GPLv3]].
 
+#+ATTR_ORG: :width 512
+[[file:screenshots/1.png]]
+
+#+ATTR_ORG: :width 512
+[[file:screenshots/2.png]]
+
 ** Features
 
 - *Multi-Script Support:* Supports Devanagari, Kannada, Malayalam, Tamil, Telugu, and many more historical/experimental Brahmi scripts (Sharada, Grantha, Siddham, etc.).
