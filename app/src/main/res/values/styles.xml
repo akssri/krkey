@@ -3,6 +3,7 @@
         <item name="colorPrimary">@color/keyboard_bg</item>
         <item name="colorPrimaryDark">@color/keyboard_bg</item>
         <item name="colorAccent">@color/key_text_color</item>
+        <item name="android:windowBackground">@color/keyboard_bg</item>
     </style>
 
     <style name="Theme.KrKey.Dialog" parent="Theme.AppCompat.DayNight.Dialog.Alert">
