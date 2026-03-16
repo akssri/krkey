@@ -1,6 +1,8 @@
 package com.akssri.krkey
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -16,7 +18,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Space
 import androidx.core.content.res.ResourcesCompat
 import com.akssri.krkey.location.KeyLocator
 import com.akssri.krkey.prediction.PredictionManager
@@ -48,9 +52,14 @@ class KrKeyIME : InputMethodService() {
     private var spaceBtn: Button? = null
     private var gestureTrailView: GestureTrailView? = null
     private var candidateBar: View? = null
+    private var keyboardRowsContainer: LinearLayout? = null
 
     private var currentLayoutGrid: List<List<Any>>? = null
     private var density = 1f
+    private var keyHeightPx = 0
+    private var splitGapWeight = 0f
+    private var landscapeMode = false
+    private var screenWidthDp = 0f
 
     // Gesture State
     private class PointerState {
@@ -84,11 +93,22 @@ class KrKeyIME : InputMethodService() {
     private var lastSpaceDragX = 0f
     private var isSpaceDragging = false
 
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key in listOf("keyboard_height_landscape", "key_width_dp")) {
+            if (keyboardRowsContainer != null) {
+                setInputView(onCreateInputView())
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         density = resources.displayMetrics.density
+        landscapeMode = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        screenWidthDp = resources.configuration.screenWidthDp.toFloat()
         userDict = UserDictionaryManager(this)
-        val lastScriptStr = getSharedPreferences("krkey_prefs", MODE_PRIVATE).getString("last_script", BrahmiScript.DEVANAGARI.name)
+        val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
+        val lastScriptStr = prefs.getString("last_script", BrahmiScript.DEVANAGARI.name)
         val script =
             try {
                 BrahmiScript.valueOf(lastScriptStr!!)
@@ -96,6 +116,12 @@ class KrKeyIME : InputMethodService() {
                 BrahmiScript.DEVANAGARI
             }
         keyboardState = KeyboardState(script = script)
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+    }
+
+    override fun onDestroy() {
+        getSharedPreferences("krkey_prefs", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
+        super.onDestroy()
     }
 
     override fun onCreateInputView(): View {
@@ -103,9 +129,30 @@ class KrKeyIME : InputMethodService() {
         val themedContext = ContextThemeWrapper(this, R.style.Theme_KrKey)
         val layout = LayoutInflater.from(themedContext).inflate(R.layout.keyboard_view, null) as LinearLayout
 
+        if (landscapeMode) {
+            val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
+            val heightDp = prefs.getInt("keyboard_height_landscape", 160)
+            val containerHeightPx = (heightDp * density).toInt()
+            keyHeightPx = (heightDp / 4.4f * density).toInt()
+
+            val keyboardFrame = layout.findViewById<FrameLayout>(R.id.keyboard_frame)
+            keyboardFrame.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, containerHeightPx
+            )
+
+            // Compute split gap weight based on target key width
+            val targetKeyWidthDp = prefs.getInt("key_width_dp", 42).toFloat()
+            val maxKeysInRow = 10 // widest row (row 1)
+            splitGapWeight = ((screenWidthDp - maxKeysInRow * targetKeyWidthDp) / targetKeyWidthDp).coerceAtLeast(0f)
+        } else {
+            keyHeightPx = (50f * density).toInt()
+            splitGapWeight = 0f
+        }
+
         candidateBar = layout.findViewById(R.id.candidate_bar)
         gestureTrailView = layout.findViewById(R.id.gesture_trail)
         candidateView = layout.findViewById(R.id.candidate_view)
+        keyboardRowsContainer = layout.findViewById(R.id.keyboard_rows)
 
         flickKeyPool = findAllFlickKeys(layout)
         allKeys = flickKeyPool
@@ -385,11 +432,12 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun rebuildKeyboardGrid(layout: List<List<Any>>) {
-        val rootLayout = this.window.window?.decorView ?: return
-        val container = rootLayout.findViewById<LinearLayout>(R.id.keyboard_rows) ?: return
+        val container = keyboardRowsContainer ?: return
 
         container.removeAllViews()
         var poolIdx = 0
+        val effectiveKeyHeight = if (keyHeightPx > 0) keyHeightPx else (50f * density).toInt()
+        val margin = (3f * density).toInt()
 
         val activeKeys = mutableListOf<FlickKeyView>()
         for (rowItems in layout) {
@@ -431,11 +479,21 @@ class KrKeyIME : InputMethodService() {
                     }
 
                 view.layoutParams =
-                    LinearLayout.LayoutParams(0, (50f * density).toInt(), weight).apply {
-                        setMargins((3f * density).toInt(), (3f * density).toInt(), (3f * density).toInt(), (3f * density).toInt())
+                    LinearLayout.LayoutParams(0, effectiveKeyHeight, weight).apply {
+                        setMargins(margin, margin, margin, margin)
                     }
                 rowLayout.addView(view)
             }
+
+            // Auto-split: insert a proportional gap at the midpoint of every row
+            if (splitGapWeight > 0f) {
+                val midpoint = rowLayout.childCount / 2
+                val spacer = Space(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, effectiveKeyHeight, splitGapWeight)
+                }
+                rowLayout.addView(spacer, midpoint)
+            }
+
             container.addView(rowLayout)
         }
 
@@ -754,6 +812,13 @@ class KrKeyIME : InputMethodService() {
         val dx = (p.last().x - p.first().x).toDouble()
         val dy = (p.last().y - p.first().y).toDouble()
         return Math.sqrt(dx * dx + dy * dy)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        landscapeMode = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
+        screenWidthDp = newConfig.screenWidthDp.toFloat()
+        setInputView(onCreateInputView())
     }
 
     override fun onFinishInput() {

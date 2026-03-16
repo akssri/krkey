@@ -8,6 +8,7 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -38,6 +39,48 @@ class SettingsActivity : AppCompatActivity() {
             )
 
         recyclerView.adapter = ScriptAdapter(typefaces)
+
+        setupHeightSliders()
+    }
+
+    private fun setupHeightSliders() {
+        val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
+
+        // Landscape height: range 120–200dp, so max=80, value = pref - 120
+        val landscapeHeight = prefs.getInt("keyboard_height_landscape", 160)
+        val landscapeLabel = findViewById<TextView>(R.id.label_landscape_height)
+        val landscapeSeekBar = findViewById<SeekBar>(R.id.seekbar_landscape_height)
+        landscapeLabel.text = "Height: ${landscapeHeight}dp"
+        landscapeSeekBar.max = 80
+        landscapeSeekBar.progress = landscapeHeight - 120
+        landscapeSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                val value = progress + 120
+                landscapeLabel.text = "Height: ${value}dp"
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                prefs.edit().putInt("keyboard_height_landscape", seekBar.progress + 120).apply()
+            }
+        })
+
+        // Key width: range 30–70dp, so max=40, value = pref - 30
+        val keyWidth = prefs.getInt("key_width_dp", 42)
+        val keyWidthLabel = findViewById<TextView>(R.id.label_key_width)
+        val keyWidthSeekBar = findViewById<SeekBar>(R.id.seekbar_key_width)
+        keyWidthLabel.text = "Key width: ${keyWidth}dp"
+        keyWidthSeekBar.max = 40
+        keyWidthSeekBar.progress = keyWidth - 30
+        keyWidthSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                val value = progress + 30
+                keyWidthLabel.text = "Key width: ${value}dp"
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                prefs.edit().putInt("key_width_dp", seekBar.progress + 30).apply()
+            }
+        })
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
