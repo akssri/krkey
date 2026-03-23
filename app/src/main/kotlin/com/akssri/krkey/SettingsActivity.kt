@@ -28,9 +28,9 @@ import android.widget.CheckBox
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.widget.SwitchCompat
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.res.ResourcesCompat
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -71,16 +71,24 @@ class SettingsActivity : AppCompatActivity() {
         landscapeLabel.text = "Height: ${landscapeHeight}dp"
         landscapeSeekBar.max = 80
         landscapeSeekBar.progress = landscapeHeight - 120
-        landscapeSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                val value = progress + 120
-                landscapeLabel.text = "Height: ${value}dp"
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                prefs.edit().putInt("keyboard_height_landscape", seekBar.progress + 120).apply()
-            }
-        })
+        landscapeSeekBar.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar,
+                    progress: Int,
+                    fromUser: Boolean,
+                ) {
+                    val value = progress + 120
+                    landscapeLabel.text = "Height: ${value}dp"
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    prefs.edit().putInt("keyboard_height_landscape", seekBar.progress + 120).apply()
+                }
+            },
+        )
 
         // Split layout switch
         val splitSwitch = findViewById<SwitchCompat>(R.id.switch_split)
@@ -108,16 +116,24 @@ class SettingsActivity : AppCompatActivity() {
             setKeyWidthEnabled(isChecked)
         }
 
-        keyWidthSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                val value = progress + 30
-                keyWidthLabel.text = "Key width: ${value}dp"
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                prefs.edit().putInt("key_width_dp", seekBar.progress + 30).apply()
-            }
-        })
+        keyWidthSeekBar.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar,
+                    progress: Int,
+                    fromUser: Boolean,
+                ) {
+                    val value = progress + 30
+                    keyWidthLabel.text = "Key width: ${value}dp"
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    prefs.edit().putInt("key_width_dp", seekBar.progress + 30).apply()
+                }
+            },
+        )
 
         // Overlay mode switch
         val overlaySwitch = findViewById<SwitchCompat>(R.id.switch_overlay)
@@ -128,7 +144,7 @@ class SettingsActivity : AppCompatActivity() {
         val opacity = prefs.getInt("keyboard_opacity_landscape", 80)
         val opacityLabel = findViewById<TextView>(R.id.label_opacity)
         val opacitySeekBar = findViewById<SeekBar>(R.id.seekbar_opacity)
-        opacityLabel.text = "Opacity: ${opacity}%"
+        opacityLabel.text = "Opacity: $opacity%"
         opacitySeekBar.max = 100
         opacitySeekBar.progress = opacity
 
@@ -145,15 +161,23 @@ class SettingsActivity : AppCompatActivity() {
             setOpacityEnabled(isChecked)
         }
 
-        opacitySeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                opacityLabel.text = "Opacity: ${progress}%"
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                prefs.edit().putInt("keyboard_opacity_landscape", seekBar.progress).apply()
-            }
-        })
+        opacitySeekBar.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar,
+                    progress: Int,
+                    fromUser: Boolean,
+                ) {
+                    opacityLabel.text = "Opacity: $progress%"
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    prefs.edit().putInt("keyboard_opacity_landscape", seekBar.progress).apply()
+                }
+            },
+        )
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {

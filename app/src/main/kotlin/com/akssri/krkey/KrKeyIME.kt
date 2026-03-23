@@ -110,13 +110,14 @@ class KrKeyIME : InputMethodService() {
     private var lastSpaceDragX = 0f
     private var isSpaceDragging = false
 
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key in listOf("keyboard_height_landscape", "key_width_dp", "keyboard_opacity_landscape", "landscape_overlay", "landscape_split")) {
-            if (keyboardRowsContainer != null) {
-                setInputView(onCreateInputView())
+    private val prefListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key in listOf("keyboard_height_landscape", "key_width_dp", "keyboard_opacity_landscape", "landscape_overlay", "landscape_split")) {
+                if (keyboardRowsContainer != null) {
+                    setInputView(onCreateInputView())
+                }
             }
         }
-    }
 
     override fun onCreate() {
         super.onCreate()
@@ -153,9 +154,10 @@ class KrKeyIME : InputMethodService() {
             keyHeightPx = (heightDp / 4.4f * density).toInt()
 
             val keyboardFrame = layout.findViewById<FrameLayout>(R.id.keyboard_frame)
-            keyboardFrame.layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, containerHeightPx
-            )
+            keyboardFrame.layoutParams =
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, containerHeightPx,
+                )
 
             // Compute split gap weight based on target key width
             if (prefs.getBoolean("landscape_split", true)) {
@@ -218,8 +220,9 @@ class KrKeyIME : InputMethodService() {
 
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
-        val overlayEnabled = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
-            .getBoolean("landscape_overlay", true)
+        val overlayEnabled =
+            getSharedPreferences("krkey_prefs", MODE_PRIVATE)
+                .getBoolean("landscape_overlay", true)
         if (landscapeMode && overlayEnabled) {
             val decorView = window?.window?.decorView ?: return
             // Push content inset to the bottom so the app is not resized
@@ -229,7 +232,7 @@ class KrKeyIME : InputMethodService() {
                 0,
                 outInsets.visibleTopInsets,
                 decorView.width,
-                decorView.height
+                decorView.height,
             )
         }
     }
@@ -540,9 +543,10 @@ class KrKeyIME : InputMethodService() {
             // Auto-split: insert a proportional gap at the midpoint of every row
             if (splitGapWeight > 0f) {
                 val midpoint = rowLayout.childCount / 2
-                val spacer = Space(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, effectiveKeyHeight, splitGapWeight)
-                }
+                val spacer =
+                    Space(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, effectiveKeyHeight, splitGapWeight)
+                    }
                 rowLayout.addView(spacer, midpoint)
             }
 
@@ -657,9 +661,11 @@ class KrKeyIME : InputMethodService() {
                             }
 
                             if (splitGapWeight == 0f &&
-                                ((pathDist(state.gesturePath) > SWIPE_START_DISTANCE_DP * density && !isLikelyFlick) ||
-                                (movedToNewKey && !isLikelyFlick) ||
-                                pathDist(state.gesturePath) > SWIPE_FORCE_DISTANCE_DP * density)
+                                (
+                                    (pathDist(state.gesturePath) > SWIPE_START_DISTANCE_DP * density && !isLikelyFlick) ||
+                                        (movedToNewKey && !isLikelyFlick) ||
+                                        pathDist(state.gesturePath) > SWIPE_FORCE_DISTANCE_DP * density
+                                )
                             ) {
                                 state.isGestureTyping = true
                                 // Cancel all other active touches to prevent accidental pecks while swiping
