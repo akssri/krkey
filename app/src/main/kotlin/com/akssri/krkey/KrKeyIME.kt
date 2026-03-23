@@ -234,6 +234,13 @@ class KrKeyIME : InputMethodService() {
         }
     }
 
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        if (finishingInput) {
+            requestHideSelf(0)
+        }
+    }
+
     private fun loadFonts() {
         try {
             siddhamTypeface = ResourcesCompat.getFont(this, R.font.noto_sans_siddham)
