@@ -27,9 +27,22 @@ class WordPredictor(
     private data class IndexedWord(val word: String, val freqIndex: Int)
 
     private val N = 40
+
+    // Weight of the additive log-rank frequency prior; tuned with tools/swipe-sim/sweep.py
+    private val FREQ_PRIOR_WEIGHT = 0.12
+
+    // Rank assumed for learned words that are not in the dictionary
+    private val LEARNED_ONLY_RANK = 1000
+
     private var learnedWords: List<Pair<String, Int>> = emptyList()
     private var learnedCountMap: Map<String, Int> = emptyMap()
     private val userBigramIndex = mutableMapOf<Long, MutableList<IndexedWord>>()
+
+    // Lowercased word -> dictionary spelling (keeps "I'm", proper-noun casing)
+    private val dictSpelling: Map<String, String> =
+        HashMap<String, String>(dictionary.size * 2).apply {
+            for (word in dictionary) putIfAbsent(word.lowercase(), word)
+        }
 
     private val charCenter: Map<Int, PointF> =
         buildMap {
@@ -52,9 +65,9 @@ class WordPredictor(
     private val dictBigramIndex: Map<Long, List<IndexedWord>> =
         buildMap<Long, MutableList<IndexedWord>> {
             for ((index, word) in dictionary.withIndex()) {
-                if (word.length < 2) continue
-                val key = bigramKey(word.codePointAt(0), word.codePointBefore(word.length))
-                getOrPut(key) { mutableListOf() }.add(IndexedWord(word, index))
+                val cps = swipeCodePoints(word)
+                if (cps.size < 2) continue
+                getOrPut(bigramKey(cps.first(), cps.last())) { mutableListOf() }.add(IndexedWord(word, index))
             }
         }
 
@@ -67,9 +80,8 @@ class WordPredictor(
 
     init {
         for (word in dictionary) {
-            val lowerWord = word.lowercase()
             var curr = trieRoot
-            for (cp in codePointsOf(lowerWord)) {
+            for (cp in swipeCodePoints(word)) {
                 curr = curr.children.getOrPut(cp) { TrieNode() }
                 if (curr.topWords.size < 10 && !curr.topWords.contains(word)) {
                     curr.topWords.add(word)
@@ -83,9 +95,10 @@ class WordPredictor(
         learnedCountMap = words.toMap()
         userBigramIndex.clear()
         for ((word, _) in words) {
-            if (word.length < 2) continue
-            val key = bigramKey(word.codePointAt(0), word.codePointBefore(word.length))
-            userBigramIndex.getOrPut(key) { mutableListOf() }.add(IndexedWord(word, -1))
+            if (word in dictSpelling) continue // scored via the dictionary entry
+            val cps = swipeCodePoints(word)
+            if (cps.size < 2) continue
+            userBigramIndex.getOrPut(bigramKey(cps.first(), cps.last())) { mutableListOf() }.add(IndexedWord(word, -1))
         }
     }
 
@@ -96,10 +109,10 @@ class WordPredictor(
             learnedWords
                 .filter { it.first.startsWith(lower) }
                 .sortedByDescending { it.second }
-                .map { it.first }
+                .map { dictSpelling[it.first] ?: it.first }
 
         var curr = trieRoot
-        for (cp in codePointsOf(lower)) {
+        for (cp in swipeCodePoints(lower)) {
             curr = curr.children[cp] ?: return userMatches.take(5)
         }
 
@@ -143,7 +156,7 @@ class WordPredictor(
             }
         }
 
-        return candidates.sortedBy { it.second }.distinctBy { it.first }.take(5)
+        return candidates.sortedBy { it.second }.distinctBy { it.first.lowercase() }.take(5)
     }
 
     private fun scoreAndAdd(
@@ -154,30 +167,31 @@ class WordPredictor(
         totalPathLen: Double,
         candidates: MutableList<Pair<String, Double>>,
     ) {
-        val rawScore = scoreCandidate(iw.word, iw.freqIndex, resampledPath, pathStart, pathEnd, totalPathLen)
-        val learnedCount = learnedCountMap[iw.word] ?: 0
+        val spatialScore = scoreCandidate(iw.word, resampledPath, pathStart, pathEnd, totalPathLen)
+        if (spatialScore >= 8.0) return
 
+        val rank = if (iw.freqIndex < 0) LEARNED_ONLY_RANK else iw.freqIndex
+        val score = spatialScore + FREQ_PRIOR_WEIGHT * Math.log(rank + 2.0)
+
+        val learnedCount = learnedCountMap[iw.word.lowercase()] ?: 0
         val boostedScore =
             if (learnedCount > 0) {
-                rawScore * 0.6 / (1.0 + Math.log10(learnedCount.toDouble() + 1.0))
+                score * 0.6 / (1.0 + Math.log10(learnedCount.toDouble() + 1.0))
             } else {
-                rawScore
+                score
             }
 
-        if (boostedScore < 8.0) {
-            candidates.add(iw.word to boostedScore)
-        }
+        candidates.add(iw.word to boostedScore)
     }
 
     private fun scoreCandidate(
         word: String,
-        freqIndex: Int,
         resampledPath: List<PointF>,
         pathStart: PointF,
         pathEnd: PointF,
         actualPathLen: Double,
     ): Double {
-        val wordCodePoints = codePointsOf(word)
+        val wordCodePoints = swipeCodePoints(word)
         val idealPoints = mutableListOf<PointF>()
         for (cp in wordCodePoints) {
             val center = charCenter[cp] ?: return 100.0
@@ -225,10 +239,7 @@ class WordPredictor(
         val idealPathLen = pathLength(idealPoints)
         val lengthPenalty = Math.abs(Math.log((actualPathLen + keyUnit) / (idealPathLen + keyUnit))) * 2.5
 
-        // Frequency weight: 1.0 for top words, up to 1.25 for rare words
-        val freqWeight = if (freqIndex < 0) 1.0 else 1.0 + (freqIndex.toDouble() / dictionary.size.coerceAtLeast(1)) * 0.25
-
-        return (startDist * 1.0 + endDist * 1.0 + avgShapeDist * 0.5 + orderScore * 0.3 + lengthPenalty * 0.4) * freqWeight
+        return startDist * 1.0 + endDist * 1.0 + avgShapeDist * 0.5 + orderScore * 0.3 + lengthPenalty * 0.4
     }
 
     private fun nearbyChars(
@@ -248,6 +259,9 @@ class WordPredictor(
     ): Long {
         return first.toLong() shl 21 or last.toLong()
     }
+
+    // Code points a word is swiped/typed with: lowercase, apostrophes and hyphens skipped
+    private fun swipeCodePoints(word: String): IntArray = codePointsOf(word.lowercase()).filter { it != '\''.code && it != '-'.code }.toIntArray()
 
     private fun codePointsOf(s: String): IntArray {
         val result = IntArray(s.codePointCount(0, s.length))

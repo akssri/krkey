@@ -26,6 +26,8 @@ import android.graphics.Typeface
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.text.InputType
 import android.view.ContextThemeWrapper
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
@@ -46,12 +48,56 @@ import com.akssri.krkey.state.KeyboardState
 import com.akssri.krkey.ui.CandidateView
 
 class KrKeyIME : InputMethodService() {
+    companion object {
+        // Punctuation that is usually followed by a space (and moves in front of an automatic one)
+        private val FOLLOWED_BY_SPACE = ".,!?;:)]}।॥".codePoints().toArray().toSet()
+        private val OPENING_BRACKETS = "([{".codePoints().toArray().toSet()
+        private const val SPACE_STATE_SETTLE_MS = 200L
+
+        // "e. g" / "i. e" left by auto-spacing, about to be closed with "."
+        private val ABBREVIATION_SPLIT = Regex("(?:^|\\W)(?:[Ee]\\. [Gg]|[Ii]\\. [Ee])$")
+
+        private val PASSWORD_TEXT_VARIATIONS =
+            setOf(
+                InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+            )
+
+        private val NO_AUTO_SPACE_VARIATIONS =
+            setOf(
+                InputType.TYPE_TEXT_VARIATION_URI,
+                InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+                InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+                InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_FILTER,
+            )
+    }
+
     // State
     private var keyboardState = KeyboardState()
     private val currentPeckedWord = StringBuilder()
     private var lastGestureWord: String? = null
     private var lastGestureHadSpace: Boolean = false
     private var expectedSelStart: Int = -1
+
+    // Automatic spacing around swiped/picked words and punctuation:
+    //   PHANTOM: a space not yet inserted; the next letter/digit/opening bracket gets it first.
+    //   ANTIPHANTOM: an inserted automatic space; a space tap is swallowed, sentence punctuation
+    //   moves in front of it, enter strips it.
+    // Any other input, or the cursor leaving spaceStateAnchor, resets to NONE.
+    private enum class SpaceState { NONE, PHANTOM, ANTIPHANTOM }
+
+    private var spaceState = SpaceState.NONE
+    private var spaceStateAnchor = -1
+    private var spaceStateSetAt = 0L
+    private var autoSpaceAllowed = true
+
+    // Password fields: no predictions, swipe typing or learning; incognito fields: no learning
+    private var isPasswordField = false
+    private var learningAllowed = true
 
     // Components
     private lateinit var keyLocator: KeyLocator
@@ -85,6 +131,9 @@ class KrKeyIME : InputMethodService() {
         var isCanceled = false
         var lastPopupText: String? = null
         val gesturePath = mutableListOf<PointF>()
+
+        // True when the last gesturePath point only tracks the finger and is not a kept sample
+        var hasProvisionalTail = false
     }
 
     private val activePointers = mutableMapOf<Int, PointerState>()
@@ -103,6 +152,7 @@ class KrKeyIME : InputMethodService() {
     private val SWIPE_START_DISTANCE_DP = 50f
     private val SWIPE_FORCE_DISTANCE_DP = 100f
     private val SWIPE_NEW_KEY_RATIO = 0.6f
+    private val GESTURE_SAMPLING_KEY_RATIO = 1f / 6f
 
     private val SPACE_DRAG_THRESHOLD_DP = 10f
     private val SPACE_DRAG_STEP_DP = 20f
@@ -307,6 +357,7 @@ class KrKeyIME : InputMethodService() {
                     val dx = event.x - spaceDragStartX
                     if (!isSpaceDragging && Math.abs(dx) > SPACE_DRAG_THRESHOLD_DP * density) {
                         isSpaceDragging = true
+                        resetSpaceState()
                         lastSpaceDragX = event.x
                     }
                     if (isSpaceDragging) {
@@ -336,8 +387,10 @@ class KrKeyIME : InputMethodService() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     v.isPressed = false
                     if (!isSpaceDragging && event.actionMasked == MotionEvent.ACTION_UP) {
+                        // A space right after an automatic one is swallowed
+                        val swallow = hasAntiphantomSpace()
                         commitCurrentInput()
-                        currentInputConnection?.commitText(" ", 1)
+                        if (!swallow) currentInputConnection?.commitText(" ", 1)
                         updateUI()
                     }
                     isSpaceDragging = false
@@ -352,7 +405,7 @@ class KrKeyIME : InputMethodService() {
             val prefs = getSharedPreferences("krkey_prefs", Context.MODE_PRIVATE)
             val enabled = BrahmiScript.values().filter { !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI) }
 
-            commitCurrentInput()
+            commitCurrentInputKeepingSpaceState()
             if (keyboardState.mode.isLatin()) {
                 keyboardState = keyboardState.withScript(keyboardState.script).copy(mode = InputMode.IndicNormal)
             } else if (enabled.size > 1) {
@@ -365,6 +418,7 @@ class KrKeyIME : InputMethodService() {
 
         specialKeyMap[SpecialKey.ENTER]?.setOnClickListener {
             it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            if (hasAntiphantomSpace()) removeTrailingSpace()
             commitCurrentInput()
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
@@ -376,7 +430,7 @@ class KrKeyIME : InputMethodService() {
             if (keyboardState.mode.isSymbol()) {
                 keyboardState = keyboardState.toggleShift() // Shift symbol layer (Layer 2)
             } else {
-                commitCurrentInput()
+                commitCurrentInputKeepingSpaceState()
                 keyboardState = keyboardState.toggleLanguage()
             }
             updateUI()
@@ -404,21 +458,40 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun onKeyInput(text: String) {
+        val prevSpaceState = if (spaceState == SpaceState.ANTIPHANTOM && !hasAntiphantomSpace()) SpaceState.NONE else spaceState
+        resetSpaceState()
         if (lastGestureWord != null) commitCurrentInput()
+
+        val cp = if (text.isEmpty()) -1 else text.codePointAt(0)
+        if (text.length == Character.charCount(cp) && cp in FOLLOWED_BY_SPACE) {
+            if (currentPeckedWord.isNotEmpty()) commitCurrentInput()
+            commitPunctuation(text, cp, prevSpaceState)
+            updateUI()
+            return
+        }
+        // A pending phantom space goes in front of the next word
+        val space =
+            if (prevSpaceState == SpaceState.PHANTOM && (Character.isLetterOrDigit(cp) || cp in OPENING_BRACKETS) &&
+                !looksLikeUrl(currentInputConnection?.getTextBeforeCursor(64, 0)?.toString() ?: "")
+            ) {
+                " "
+            } else {
+                ""
+            }
 
         val isWordChar = !listOf("।", "॥", ".", ",", "!", "?", "/", "'", "\"", "\\", " ").contains(text)
         if (!keyboardState.mode.isSymbol() && isWordChar && text.isNotBlank()) {
             val ic = currentInputConnection ?: return
             if (currentPeckedWord.isEmpty() && expectedSelStart == -1) {
-                expectedSelStart = ic.getTextBeforeCursor(10000, 0)?.length ?: 0
+                expectedSelStart = (ic.getTextBeforeCursor(10000, 0)?.length ?: 0) + space.length
             }
             currentPeckedWord.append(text)
-            ic.commitText(text, 1)
+            ic.commitText(space + text, 1)
             expectedSelStart += text.length
             updatePeckedCandidates()
         } else {
             if (currentPeckedWord.isNotEmpty()) commitCurrentInput()
-            currentInputConnection?.commitText(text, 1)
+            currentInputConnection?.commitText(space + text, 1)
         }
         updateUI()
     }
@@ -427,7 +500,7 @@ class KrKeyIME : InputMethodService() {
         updateBase()
         val mode = keyboardState.mode
         val script = keyboardState.script
-        candidateBar?.visibility = if (!mode.isSymbol()) View.VISIBLE else View.GONE
+        candidateBar?.visibility = if (!mode.isSymbol() && !isPasswordField) View.VISIBLE else View.GONE
 
         val tf =
             if (!mode.isLatin()) {
@@ -619,12 +692,17 @@ class KrKeyIME : InputMethodService() {
                 }
             }
             MotionEvent.ACTION_MOVE -> {
+                val minSampleDist = (allKeys.firstOrNull()?.width ?: 0) * GESTURE_SAMPLING_KEY_RATIO
                 for (i in 0 until event.pointerCount) {
                     val pId = event.getPointerId(i)
                     val state = activePointers[pId] ?: continue
                     val px = event.getX(i)
                     val py = event.getY(i)
-                    state.gesturePath.add(PointF(px, py))
+                    // MOVE events batch several touch samples; keep them so fast swipes don't cut corners
+                    for (h in 0 until event.historySize) {
+                        addGesturePoint(state, event.getHistoricalX(i, h), event.getHistoricalY(i, h), minSampleDist)
+                    }
+                    addGesturePoint(state, px, py, minSampleDist, isLatest = true)
 
                     if (!keyboardState.mode.isLatin() || keyboardState.mode.isSymbol()) {
                         // Non-gesture mode
@@ -660,7 +738,7 @@ class KrKeyIME : InputMethodService() {
                                 }
                             }
 
-                            if (splitGapWeight == 0f &&
+                            if (splitGapWeight == 0f && !isPasswordField &&
                                 (
                                     (pathDist(state.gesturePath) > SWIPE_START_DISTANCE_DP * density && !isLikelyFlick) ||
                                         (movedToNewKey && !isLikelyFlick) ||
@@ -682,7 +760,10 @@ class KrKeyIME : InputMethodService() {
                                 candidateView?.showCandidates(emptyList())
                             }
                         }
-                        if (state.isGestureTyping) gestureTrailView?.addPoint(px, py)
+                        if (state.isGestureTyping) {
+                            for (h in 0 until event.historySize) gestureTrailView?.addPoint(event.getHistoricalX(i, h), event.getHistoricalY(i, h))
+                            gestureTrailView?.addPoint(px, py)
+                        }
                     }
                 }
             }
@@ -711,6 +792,31 @@ class KrKeyIME : InputMethodService() {
             }
         }
         return true
+    }
+
+    private fun addGesturePoint(
+        state: PointerState,
+        x: Float,
+        y: Float,
+        minDist: Float,
+        isLatest: Boolean = false,
+    ) {
+        val path = state.gesturePath
+        val anchor = if (state.hasProvisionalTail) path[path.size - 2] else path.last()
+        val farEnough = Math.hypot((x - anchor.x).toDouble(), (y - anchor.y).toDouble()) >= minDist
+        when {
+            farEnough && state.hasProvisionalTail -> {
+                path.last().set(x, y)
+                state.hasProvisionalTail = false
+            }
+            farEnough -> path.add(PointF(x, y))
+            // Too close to keep as a sample, but the path must still end at the finger
+            isLatest && state.hasProvisionalTail -> path.last().set(x, y)
+            isLatest -> {
+                path.add(PointF(x, y))
+                state.hasProvisionalTail = true
+            }
+        }
     }
 
     private fun handleFlickOrTap(
@@ -752,6 +858,18 @@ class KrKeyIME : InputMethodService() {
         candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        if (spaceState != SpaceState.NONE) {
+            // Updates for our own edits can arrive late, so shortly after the automatic-space
+            // edit they only move the anchor; after that, any cursor movement cancels the state
+            val settling = SystemClock.uptimeMillis() - spaceStateSetAt < SPACE_STATE_SETTLE_MS
+            if (newSelStart != newSelEnd) {
+                resetSpaceState()
+            } else if (spaceStateAnchor == -1 || settling) {
+                spaceStateAnchor = newSelStart
+            } else if (newSelStart != spaceStateAnchor) {
+                resetSpaceState()
+            }
+        }
         val cursorJumped = expectedSelStart != -1 && Math.abs(newSelStart - expectedSelStart) > 2
         if (newSelStart != newSelEnd || cursorJumped) {
             resetInputState()
@@ -765,6 +883,9 @@ class KrKeyIME : InputMethodService() {
     ) {
         super.onStartInputView(info, restarting)
         userDict.load()
+        autoSpaceAllowed = allowsAutoSpace(info)
+        isPasswordField = isPasswordInput(info)
+        learningAllowed = !isPasswordField && (info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING == 0
         val prefs = getSharedPreferences("krkey_prefs", Context.MODE_PRIVATE)
         val oldScript = keyboardState.script
         val isCurrentEnabled = !keyboardState.script.isExperimental && prefs.getBoolean("script_${keyboardState.script.name}", keyboardState.script == BrahmiScript.DEVANAGARI)
@@ -781,8 +902,24 @@ class KrKeyIME : InputMethodService() {
         updateUI()
     }
 
+    private fun allowsAutoSpace(info: EditorInfo?): Boolean {
+        val inputType = info?.inputType ?: return true
+        if (inputType and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return false
+        return inputType and InputType.TYPE_MASK_VARIATION !in NO_AUTO_SPACE_VARIATIONS
+    }
+
+    private fun isPasswordInput(info: EditorInfo?): Boolean {
+        val inputType = info?.inputType ?: return false
+        val variation = inputType and InputType.TYPE_MASK_VARIATION
+        return when (inputType and InputType.TYPE_MASK_CLASS) {
+            InputType.TYPE_CLASS_TEXT -> variation in PASSWORD_TEXT_VARIATIONS
+            InputType.TYPE_CLASS_NUMBER -> variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            else -> false
+        }
+    }
+
     private fun updatePeckedCandidates() {
-        if (keyboardState.mode.isSymbol() || currentPeckedWord.length < 2) {
+        if (keyboardState.mode.isSymbol() || currentPeckedWord.length < 2 || isPasswordField) {
             candidateView?.showCandidates(emptyList())
             return
         }
@@ -795,7 +932,7 @@ class KrKeyIME : InputMethodService() {
     private fun performGestureTyping(path: List<PointF>): Boolean {
         predictionManager.ensurePredictor(keyboardState.mode.isLatin(), keyboardState.script, userDict.getLearnedWords())
         val res = predictionManager.predictGesture(path)
-        if (res.isNotEmpty() && res[0].second <= 8.0) {
+        if (res.isNotEmpty()) {
             val word = res[0].first
             val shouldCaps = isSentenceStart()
             lastGestureWord = word
@@ -807,6 +944,7 @@ class KrKeyIME : InputMethodService() {
             ic.commitText(space + out, 1)
 
             expectedSelStart = (ic.getTextBeforeCursor(10000, 0)?.length ?: 0)
+            setSpaceState(SpaceState.PHANTOM)
             candidateView?.showCandidates(res.map { it.first }, shouldCaps)
             return true
         }
@@ -815,6 +953,7 @@ class KrKeyIME : InputMethodService() {
 
     private fun deleteLastChar() {
         val ic = currentInputConnection ?: return
+        resetSpaceState()
         if (lastGestureWord != null) {
             ic.deleteSurroundingText(lastGestureWord!!.length + (if (lastGestureHadSpace) 1 else 0), 0)
             resetInputState()
@@ -846,12 +985,88 @@ class KrKeyIME : InputMethodService() {
         lastGestureWord = null
         lastGestureHadSpace = false
         expectedSelStart = -1
+        resetSpaceState()
         candidateView?.showCandidates(emptyList())
+    }
+
+    // Switching layout should not cancel automatic spacing
+    private fun commitCurrentInputKeepingSpaceState() {
+        val state = spaceState
+        val anchor = spaceStateAnchor
+        commitCurrentInput()
+        spaceState = state
+        spaceStateAnchor = anchor
+    }
+
+    private fun setSpaceState(state: SpaceState) {
+        // Inserted spaces depend on the field type; a phantom space only mirrors what the
+        // swipe itself does (needsPrecedingSpace), so it applies in any field
+        spaceState = if (state == SpaceState.ANTIPHANTOM && !autoSpaceAllowed) SpaceState.NONE else state
+        spaceStateAnchor = -1
+        spaceStateSetAt = SystemClock.uptimeMillis()
+    }
+
+    // The automatic space is only acted on if it is still right before the cursor
+    private fun hasAntiphantomSpace(): Boolean = spaceState == SpaceState.ANTIPHANTOM && currentInputConnection?.getTextBeforeCursor(1, 0)?.toString() == " "
+
+    private fun resetSpaceState() {
+        spaceState = SpaceState.NONE
+        spaceStateAnchor = -1
+    }
+
+    private fun removeTrailingSpace() {
+        val ic = currentInputConnection ?: return
+        if (ic.getTextBeforeCursor(1, 0)?.toString() == " ") ic.deleteSurroundingText(1, 0)
+    }
+
+    // Commits sentence punctuation, moving it in front of an automatic space and following it
+    // with one: "word |" + "." -> "word. |"
+    private fun commitPunctuation(
+        text: String,
+        cp: Int,
+        prevState: SpaceState,
+    ) {
+        val ic = currentInputConnection ?: return
+        val isOptionallySpaced = cp == ':'.code || cp == ';'.code
+        var before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
+
+        ic.beginBatchEdit()
+        if (prevState == SpaceState.ANTIPHANTOM && !isOptionallySpaced && before.endsWith(" ")) {
+            ic.deleteSurroundingText(1, 0)
+            before = before.dropLast(1)
+        }
+        // Keep "e.g." and "i.e." together instead of "e. g."
+        if (cp == '.'.code && ABBREVIATION_SPLIT.containsMatchIn(before)) {
+            val joined = before.takeLast(4).replace(" ", "")
+            ic.deleteSurroundingText(4, 0)
+            ic.commitText(joined, 1)
+            before = before.dropLast(4) + joined
+        }
+        ic.commitText(text, 1)
+
+        val last = before.lastOrNull()
+        val next = ic.getTextAfterCursor(1, 0)?.firstOrNull()
+        val followWithSpace =
+            autoSpaceAllowed && last != null && !last.isWhitespace() && !last.isDigit() &&
+                !looksLikeUrl(before + text) &&
+                (next == null || next == ' ' || next.code !in FOLLOWED_BY_SPACE)
+        if (followWithSpace) {
+            // An existing space after the cursor is re-inserted so the cursor ends up after it
+            if (next == ' ') ic.deleteSurroundingText(0, 1)
+            ic.commitText(" ", 1)
+            setSpaceState(SpaceState.ANTIPHANTOM)
+        }
+        ic.endBatchEdit()
+    }
+
+    private fun looksLikeUrl(text: String): Boolean {
+        val token = text.substringAfterLast(' ').substringAfterLast('\n')
+        return '@' in token || "://" in token || token.startsWith("www.") || ('.' in token && '/' in token)
     }
 
     private fun commitCurrentInput() {
         val wordToLearn = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.toString() else lastGestureWord
-        if (wordToLearn != null && wordToLearn.length > 1) userDict.learnWord(wordToLearn)
+        if (learningAllowed && wordToLearn != null && wordToLearn.length > 1) userDict.learnWord(wordToLearn)
         resetInputState()
     }
 
@@ -898,14 +1113,20 @@ class KrKeyIME : InputMethodService() {
                 }
 
             val space = if (needsPrecedingSpace(deleteLen)) " " else ""
+            val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
+            val next = ic.getTextAfterCursor(1, 0)?.firstOrNull()
+            // A picked word is followed by a space right away, unless punctuation already follows
+            val trailingSpace = autoSpaceAllowed && !looksLikeUrl(before) && (next == null || next == ' ' || next.code !in FOLLOWED_BY_SPACE)
 
             ic.beginBatchEdit()
             if (deleteLen > 0) ic.deleteSurroundingText(deleteLen, 0)
-            ic.commitText(space + displayWord, 1)
+            if (trailingSpace && next == ' ') ic.deleteSurroundingText(0, 1)
+            ic.commitText(space + displayWord + (if (trailingSpace) " " else ""), 1)
             ic.endBatchEdit()
 
-            userDict.learnWord(originalWord)
+            if (learningAllowed) userDict.learnWord(originalWord)
             resetInputState()
+            setSpaceState(if (trailingSpace) SpaceState.ANTIPHANTOM else SpaceState.PHANTOM)
             updateUI()
         }
     }

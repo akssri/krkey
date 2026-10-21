@@ -1,0 +1,6 @@
+app/src/main/assets/en_dict.txt is derived from the English (US) wordlist of the
+Android Open Source Project's LatinIME dictionaries
+(en_US_wordlist.combined, version 54), Copyright (C) The Android Open Source Project,
+licensed under the Apache License, Version 2.0:
+http://www.apache.org/licenses/LICENSE-2.0
+It is generated with tools/dicts/gen_en_dict.py.
