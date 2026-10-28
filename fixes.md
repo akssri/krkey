@@ -4,12 +4,13 @@ These come from reading the code only, not from a build or a device test. Bugs 1
 
 ## Bugs
 
-- [ ] **1. Touches on special keys are mishandled during multi-touch.** `KrKeyIME.kt` `handleGlobalTouch` (~L584) and the space/backspace listeners (~L267–348).
+- [x] **1. Touches on special keys are mishandled during multi-touch.** `KrKeyIME.kt` `handleGlobalTouch` (~L584) and the space/backspace listeners (~L267–348).
   - `FlickKeyView` doesn't claim touches, so the frame's listener takes them. Once the first finger lands on a letter key, Android sends every later finger to the frame too.
   - If one of those fingers lands on space or backspace, `findSpecialKeyAt` returns `false` and the tap is dropped.
   - It goes wrong the other way too. If space is held first, a second finger on a letter key gets routed to the space button. Space's listener only handles `ACTION_UP`, not `ACTION_POINTER_UP`, so whichever finger lifts last fires the space.
   - Result: fast two-thumb typing loses spaces.
   - Fix: handle special-key hits inside `handleGlobalTouch`, so no touch ever goes to the buttons.
+  - Done 2026-10-22: special keys are tracked per pointer in `handleGlobalTouch` (the buttons no longer take touches), with AOSP-style rollover: a new finger commits older taps first. Reported as lost spaces in split landscape.
 
 - [ ] **2. Hindi: you can't add a vowel sign (maatraa) after a nukta.** `KeyMap.kt` `DEVA_CONSONANTS` (~L223), `KrKeyIME.updateBase` (~L743).
   - `DEVA_CONSONANTS` lists `"ढ"` (U+0922) twice. The second one was probably meant to be ढ़ (U+095D), which is currently missing.
@@ -36,7 +37,9 @@ These come from reading the code only, not from a build or a device test. Bugs 1
 
 ## Performance
 
-- [ ] **Predictor rebuilt on every focus change.** `onStartInputView` calls `predictionManager.clearCache()` each time a text field gains focus. The first two-letter peck then transliterates the whole dictionary and rebuilds the trie and index on the UI thread. Fix: invalidate only when a dictionary or script setting changes, and build in the background.
+- [x] **Predictor rebuilt on every focus change.** `onStartInputView` calls `predictionManager.clearCache()` each time a text field gains focus. The first two-letter peck then transliterates the whole dictionary and rebuilds the trie and index on the UI thread. Fix: invalidate only when a dictionary or script setting changes, and build in the background.
+  - Done 2026-10-22: the cache is kept across fields and cleared only when a `dict_`/`script_` setting changes (about 33 ms per build on the desktop). Predictors built before layout (0×0 keys) are rebuilt (`WordPredictor.hasGeometry`).
+- [x] **Slow decoding of long swipes.** Exact trie search visited nearly the whole trie (about 51k nodes) on long swipes. Fixed 2026-10-22: beam search (BEAM=200, BEAM_ALPHA=0.5; `tools/swipe-sim/beam_eval.py`, same simulated accuracy as exact search) plus per-swipe distance caches. The longest logged swipe went from 36 ms to 1.3 ms on the desktop.
 - [ ] **Learned words re-indexed on every key press.** `PredictionManager.ensurePredictor` calls `setLearnedWords` each time. That re-sorts up to 1,000 words and rebuilds the user index.
 - [ ] **Dictionary parsed on every save.** `UserDictionaryManager.learnWord` writes the whole JSON to prefs. Its own pref listener then calls `load()` and parses it again.
 
@@ -143,9 +146,16 @@ Simulated swipes are much kinder than real thumbs, so real-device accuracy will 
     - `en_dict.txt` is regenerated from the AOSP wordlist (`tools/dicts/gen_en_dict.py`, see `NOTICE`). Matching uses letters only, so "dont" gives "don't".
     - The frequency prior is now additive, `+0.12·ln(rank+2)`, tuned with `tools/swipe-sim/sweep.py` (simulated top-1 rose from 83.5% to 88–89% for λ between 0.1 and 0.15; 0.12 itself was not run).
     - Previous-word context is still to do.
-- [ ] **4. Handle overshoot gently.** Make the end distance a soft cost, or measure it against the last segment rather than the key centre. Widen the 1.5-key range used to pick end letters.
-- [ ] **5. Replace the fixed 40-point shape comparison with elastic alignment.** This is the main structural fix and the core idea of FUTO's legacy engine: match each letter to its closest-approach point in order, and penalise straying from the letter-to-letter line. An optimal alignment (dynamic time warping) between the swipe and the ideal path also works. Run it as a beam search over the existing trie, not over endpoint buckets.
-- [ ] **6. Build a replay harness before tuning.** In debug builds, log real swipes as JSON (as FUTO does) and replay them in JVM tests or the Python sim (`tools/swipe-sim/`). Every constant in `WordPredictor` is currently hand-picked with nothing measuring it.
+- [x] **4. Handle overshoot gently.** Make the end distance a soft cost, or measure it against the last segment rather than the key centre. Widen the 1.5-key range used to pick end letters.
+- [x] **5. Replace the fixed 40-point shape comparison with elastic alignment.** This is the main structural fix and the core idea of FUTO's legacy engine: match each letter to its closest-approach point in order, and penalise straying from the letter-to-letter line. An optimal alignment (dynamic time warping) between the swipe and the ideal path also works. Run it as a beam search over the existing trie, not over endpoint buckets.
+- [x] **6. Build a replay harness before tuning.** In debug builds, log real swipes as JSON (as FUTO does) and replay them in JVM tests or the Python sim (`tools/swipe-sim/`). Every constant in `WordPredictor` is currently hand-picked with nothing measuring it.
+  - Done 2026-10-21 (4–6):
+    - `WordPredictor` now uses elastic alignment as a dynamic program over the dictionary trie (prototype: `tools/swipe-sim/elastic.py`).
+    - Swipe before the first letter and after the last is a soft cost, which handles overshoot.
+    - Weights were tuned with `tune.py` and checked on held-out words with `refine.py`: simulated top-1 rose from 88.2% to 94.0% (overshoot 87% → 96%).
+    - `WordPredictorParityTest` checks the Kotlin port against the prototype (100/100 top-1).
+    - Debug builds log swipes to `files/swipes.jsonl` (`SwipeLogger`); `tools/swipe-sim/replay.py` replays them through both decoders.
+    - Next: tune on real logged swipes.
 
 ## Licensing
 
