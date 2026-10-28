@@ -57,13 +57,14 @@ class PredictionManager(
         learnedWords: List<Pair<String, Int>>,
     ) {
         val key = PredictorKey(isLatin, script)
-        if (currentKey == key && currentPredictor != null) {
+        if (currentKey == key && currentPredictor?.hasGeometry == true) {
             currentPredictor?.setLearnedWords(learnedWords)
             return
         }
 
         var predictor = predictors[key]
-        if (predictor == null) {
+        // A predictor built before the keys were laid out has no key positions: rebuild it
+        if (predictor == null || !predictor.hasGeometry) {
             predictor = createPredictor(isLatin, script)
             predictors[key] = predictor
         }
@@ -121,7 +122,7 @@ class PredictionManager(
                 } catch (e: IllegalArgumentException) {
                     return@mapNotNull null
                 }
-                char.lowercase() to r
+                WordPredictor.KeyBox(char.lowercase(), r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
             }
 
         return WordPredictor(locs, staticDict)
