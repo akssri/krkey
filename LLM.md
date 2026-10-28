@@ -37,6 +37,7 @@ Create an extensible multi-script Brahmic IME for Android using Japanese-style f
 - **Script-Specific Labels:** The symbol mode button label uses Devanagari source text ("अल्") and `.toBrahmiScript(script)` for proper transliteration to any active script.
 - **Language-Specific Hacks:**
   - **Dravidian Vowels:** In Kannada, Telugu, and Malayalam, the short "E/O" and long "E/O" tuples are explicitly swapped post-transliteration because short vowels are vastly more frequent in Dravidian languages.
+  - **Devanagari Vowels:** In Devanagari, ए and ओ flick to ऐ and औ, and the rarely used short E/O (ऎ, flick ऒ) take the old ऐ/औ key on row 3 (`buildScriptData`). Other scripts still use the shared grid unchanged.
   - **Tamil Layout:** Tamil requires a heavily customized, non-Devanagari 1:1 grid (`TAMIL_INDIC_GRID`). It is ergonomically designed based on EMILLE corpus consonant frequencies to maximize left/right thumb alternation (vowels clustered left, high-freq consonants like க, த, ர clustered right).
 
 ## Major Artifact History & Milestones

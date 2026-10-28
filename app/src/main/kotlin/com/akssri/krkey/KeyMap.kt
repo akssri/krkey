@@ -288,6 +288,21 @@ object ScriptManager {
                 }
         }
 
+        if (script == BrahmiScript.DEVANAGARI) {
+            // ए/ओ flick to ऐ/औ; the short e/o (rarely used in Devanagari) move to the old ऐ/औ key
+            indicLayer =
+                indicLayer.map { row ->
+                    row.map { item ->
+                        when (item) {
+                            "ओ" to "ऒ" -> "ओ" to "औ"
+                            "ए" to "ऎ" -> "ए" to "ऐ"
+                            "ऐ" to "औ" -> "ऎ" to "ऒ"
+                            else -> item
+                        }
+                    }
+                }
+        }
+
         layers[KeyboardLayer.INDIC] = indicLayer
         layers[KeyboardLayer.LATIN] = LATIN_GRID
         layers[KeyboardLayer.SYM] = transliterateGrid(SYM_GRID, script)
