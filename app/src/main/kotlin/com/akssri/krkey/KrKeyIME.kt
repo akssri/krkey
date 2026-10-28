@@ -17,6 +17,7 @@
 
 package com.akssri.krkey
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -105,6 +106,18 @@ class KrKeyIME : InputMethodService() {
     // read-backs: asynchronous editors (e.g. Firefox) lag on those but do track the cursor
     private val typedTail = StringBuilder()
     private var editorHidesText = false
+
+    // Clipboard chip in the suggestion bar (when it has no candidates); hidden once pasted, until
+    // the clipboard changes. The clip is read on field start and on change, not on every edit.
+    private var clipboard: ClipboardManager? = null
+    private var currentClip: String? = null
+    private var lastPastedClip: String? = null
+    private val clipListener =
+        ClipboardManager.OnPrimaryClipChangedListener {
+            lastPastedClip = null
+            currentClip = clipboardText()
+            refreshClipboardChip()
+        }
 
     // Password fields: no predictions, swipe typing or learning; incognito fields: no learning
     private var isPasswordField = false
@@ -204,6 +217,8 @@ class KrKeyIME : InputMethodService() {
         screenWidthDp = resources.configuration.screenWidthDp.toFloat()
         DebugLog.init(this)
         userDict = UserDictionaryManager(this)
+        clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard?.addPrimaryClipChangedListener(clipListener)
         swipeLogger = SwipeLogger(this)
         val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
         val lastScriptStr = prefs.getString("last_script", BrahmiScript.DEVANAGARI.name)
@@ -218,6 +233,7 @@ class KrKeyIME : InputMethodService() {
     }
 
     override fun onDestroy() {
+        clipboard?.removePrimaryClipChangedListener(clipListener)
         getSharedPreferences("krkey_prefs", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
         super.onDestroy()
     }
@@ -566,6 +582,7 @@ class KrKeyIME : InputMethodService() {
 
     private fun updateUI() {
         updateBase()
+        refreshClipboardChip()
         val mode = keyboardState.mode
         val script = keyboardState.script
         candidateBar?.visibility = if (!mode.isSymbol() && !mode.isNumeric() && !isPasswordField) View.VISIBLE else View.GONE
@@ -1021,6 +1038,44 @@ class KrKeyIME : InputMethodService() {
         if (!restarting || keyboardState.script != oldScript) {
             resetInputState()
         }
+        currentClip = clipboardText()
+        updateUI()
+    }
+
+    // Shows the clipboard's text as a chip in the suggestion bar; the bar shows it whenever there
+    // are no candidates, so it can be pasted anywhere in the field. Called from updateUI.
+    private fun refreshClipboardChip() {
+        val view = candidateView ?: return
+        val clip = if (isPasswordField) null else currentClip
+        if (clip == null || clip == lastPastedClip) {
+            view.setClipboardChip(null, null)
+            return
+        }
+        // Just the icon: the clip's text is never shown (it may be sensitive anyway)
+        view.setClipboardChip("📋") { pasteClip(clip) }
+    }
+
+    /** Plain text of the primary clip, if any. */
+    private fun clipboardText(): String? {
+        val clip =
+            try {
+                clipboard?.primaryClip
+            } catch (e: SecurityException) {
+                null
+            } ?: return null
+        if (clip.itemCount == 0) return null
+        // Only real text: coerceToText() can do slow content-provider lookups for URIs
+        val text = clip.getItemAt(0).text?.toString()
+        return if (text.isNullOrBlank()) null else text
+    }
+
+    private fun pasteClip(text: String) {
+        // After a swipe the pasted text starts a new word, like any typed word
+        val space = if (spaceState == SpaceState.PHANTOM && Character.isLetterOrDigit(text.codePointAt(0))) " " else ""
+        commitCurrentInput()
+        commit(space + text)
+        DebugLog.d { "paste from clipboard chip (${text.length} chars)" }
+        lastPastedClip = text
         updateUI()
     }
 

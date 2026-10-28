@@ -63,6 +63,18 @@ class CandidateView
         }
 
         /**
+         * Clipboard chip, shown in place of candidates whenever there are none.
+         * @param label Text to show (already shortened), or null for no chip
+         * @param onClick Called when the chip is tapped
+         */
+        fun setClipboardChip(
+            label: String?,
+            onClick: (() -> Unit)?,
+        ) {
+            adapter.setClipboardChip(label, onClick)
+        }
+
+        /**
          * Set click listener for candidate selection.
          * @param listener Called with (displayWord, originalWord)
          */
@@ -78,6 +90,20 @@ class CandidateView
             private var candidates: List<String> = emptyList()
             private var capitalize: Boolean = false
             private var clickListener: ((String, String) -> Unit)? = null
+            private var clipLabel: String? = null
+            private var clipClick: (() -> Unit)? = null
+
+            private val showingClip get() = candidates.isEmpty() && clipLabel != null
+
+            fun setClipboardChip(
+                label: String?,
+                onClick: (() -> Unit)?,
+            ) {
+                clipClick = onClick
+                if (label == clipLabel) return // called on every edit: redraw only on change
+                clipLabel = label
+                notifyDataSetChanged()
+            }
 
             fun updateCandidates(
                 words: List<String>,
@@ -102,6 +128,7 @@ class CandidateView
                         setPadding(30, 0, 30, 0)
                         gravity = Gravity.CENTER
                         setTextColor(ContextCompat.getColor(context, R.color.key_text_color))
+                        maxLines = 1
                         background = ContextCompat.getDrawable(context, R.drawable.key_bg)
                         layoutParams =
                             LinearLayout.LayoutParams(
@@ -118,6 +145,10 @@ class CandidateView
                 holder: CandidateViewHolder,
                 position: Int,
             ) {
+                if (showingClip) {
+                    holder.bindClip(clipLabel!!, clipClick)
+                    return
+                }
                 val originalWord = candidates[position]
                 val displayWord =
                     if (capitalize) {
@@ -128,7 +159,7 @@ class CandidateView
                 holder.bind(displayWord, originalWord, clickListener)
             }
 
-            override fun getItemCount(): Int = candidates.size
+            override fun getItemCount(): Int = if (showingClip) 1 else candidates.size
         }
 
         /**
@@ -145,6 +176,14 @@ class CandidateView
                 textView.setOnClickListener {
                     clickListener?.invoke(displayWord, originalWord)
                 }
+            }
+
+            fun bindClip(
+                label: String,
+                onClick: (() -> Unit)?,
+            ) {
+                textView.text = label
+                textView.setOnClickListener { onClick?.invoke() }
             }
         }
     }
