@@ -55,6 +55,7 @@ class KrKeyIME : InputMethodService() {
         private val OPENING_BRACKETS = "([{".codePoints().toArray().toSet()
         private const val SPACE_STATE_SETTLE_MS = 200L
         private const val TYPED_TAIL_MAX = 64
+        private const val ZWNJ = "\u200C" // zero-width non-joiner
 
         // "e. g" / "i. e" left by auto-spacing, about to be closed with "."
         private val ABBREVIATION_SPLIT = Regex("(?:^|\\W)(?:[Ee]\\. [Gg]|[Ii]\\. [Ee])$")
@@ -387,7 +388,11 @@ class KrKeyIME : InputMethodService() {
         state: PointerState,
         x: Float,
     ) {
-        if (!state.isSpaceDragging && Math.abs(x - state.gesturePath[0].x) > SPACE_DRAG_THRESHOLD_DP * density) {
+        val start = state.gesturePath[0]
+        val dx = Math.abs(x - start.x)
+        val dy = Math.abs(state.gesturePath.last().y - start.y)
+        // A drag is sideways; mostly-vertical movement is a flick (ZWNJ), not a cursor move
+        if (!state.isSpaceDragging && dx > SPACE_DRAG_THRESHOLD_DP * density && dx > dy) {
             state.isSpaceDragging = true
             resetSpaceState()
             state.lastSpaceDragX = x
@@ -474,7 +479,16 @@ class KrKeyIME : InputMethodService() {
         stopPointer(state)
         if (!perform) return
         when (state.specialKey) {
-            SpecialKey.SPACE -> if (!state.isSpaceDragging) onSpaceTap()
+            SpecialKey.SPACE ->
+                if (state.isSpaceDragging) {
+                    Unit
+                } else if (isZwnjFlick(state)) {
+                    // Zero-width non-joiner: stops a conjunct after a virama in Indic text
+                    DebugLog.d { "space flick: ZWNJ" }
+                    onKeyInput(ZWNJ)
+                } else {
+                    onSpaceTap()
+                }
             SpecialKey.ENTER -> onEnter()
             SpecialKey.SHIFT -> onShift()
             SpecialKey.SYMBOL -> onSymbol()
@@ -510,7 +524,7 @@ class KrKeyIME : InputMethodService() {
         for (state in activePointers.values.toList()) {
             if (state.released || state.isCanceled || state.isGestureTyping) continue
             when {
-                state.specialKey == SpecialKey.SPACE && !state.isSpaceDragging -> {
+                state.specialKey == SpecialKey.SPACE && !state.isSpaceDragging && !isFlickInProgress(state.gesturePath) -> {
                     stopPointer(state)
                     state.released = true
                     onSpaceTap()
@@ -884,7 +898,8 @@ class KrKeyIME : InputMethodService() {
                 if (state.specialKey != null) {
                     // Like a button: sliding off the key before lifting cancels it
                     val liftedOnKey = findSpecialKeyAt(event.getX(pointerIndex), event.getY(pointerIndex))?.first == state.specialKey
-                    onSpecialUp(state, perform = !state.isCanceled && (liftedOnKey || state.isSpaceDragging))
+                    // A drag or a flick off the space bar still counts; other slide-offs cancel
+                    onSpecialUp(state, perform = !state.isCanceled && (liftedOnKey || state.isSpaceDragging || isZwnjFlick(state)))
                     return true
                 }
                 val finalKey = state.activeKey
@@ -1415,6 +1430,9 @@ class KrKeyIME : InputMethodService() {
         if (last.isWhitespace()) return false // Kotlin's isWhitespace includes U+00A0
         return last != '.' && last != '?' && last != '!' && last != '।' && last != '॥'
     }
+
+    // Flick up on the space bar in an Indic layer (in Latin it is just a space)
+    private fun isZwnjFlick(state: PointerState): Boolean = state.specialKey == SpecialKey.SPACE && !keyboardState.mode.isLatin() && isFlickGesture(state.gesturePath)
 
     private fun isFlickInProgress(path: List<PointF>): Boolean = path.size >= 2 && path.first().y - path.last().y > FLICK_ROLLOVER_SLOP_DP * density
 
