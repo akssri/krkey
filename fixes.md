@@ -167,7 +167,7 @@ Many of the AOSP-derived Java files (`PointerTracker`, `GestureStrokeRecognition
 
 # TODO (after the swipe work)
 
-- [ ] **Numeric keypad for number fields.** Number, phone and date/time fields (`TYPE_CLASS_NUMBER`, `TYPE_CLASS_PHONE`, `TYPE_CLASS_DATETIME`) currently get the full Indic/Latin keyboard. Add a dedicated numeric layer and select it in `onStartInputView` from `EditorInfo.inputType`. It needs:
+- [x] **Numeric keypad for number fields.** Number, phone and date/time fields (`TYPE_CLASS_NUMBER`, `TYPE_CLASS_PHONE`, `TYPE_CLASS_DATETIME`) currently get the full Indic/Latin keyboard. Add a dedicated numeric layer and select it in `onStartInputView` from `EditorInfo.inputType`. It needs:
   - a phone-style 3×4 grid with digits, and `+ * #` for phone fields;
   - `. , -` for decimal or signed numbers (`TYPE_NUMBER_FLAG_DECIMAL`, `TYPE_NUMBER_FLAG_SIGNED`);
   - backspace and enter;
@@ -175,3 +175,8 @@ Many of the AOSP-derived Java files (`PointerTracker`, `GestureStrokeRecognition
   - a choice between ASCII and native-script digits (e.g. ०–९), since some fields reject non-ASCII digits.
 
   Numeric password fields (`TYPE_NUMBER_VARIATION_PASSWORD`, e.g. PINs) should use the same keypad.
+
+  Done 2026-10-28: `InputMode.Numeric(phone, fromLatin)` with `NUMBER_GRID` and `PHONE_GRID` (`KeyMap.kt`).
+  - **Digits:** tap gives ASCII digits; flicking up gives the script's own digit, which replaces a separate setting.
+  - **Field detection:** keypads are picked from the input class in `onStartInputView` (date/time fields use the number grid). Layouts follow FUTO's `number_basic` and `phone`, with no key to leave the keypad; leaving the field restores the full keyboard.
+  - **Tests:** `KeyboardStateNumericTest`.

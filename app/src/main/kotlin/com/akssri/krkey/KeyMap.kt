@@ -184,6 +184,30 @@ val SYM_GRID =
         listOf(SpecialKey.SYMBOL, "," to "\"", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "!", SpecialKey.ENTER),
     )
 
+// Numeric keypads for number/date and phone fields, after FUTO's number_basic and phone layouts
+// (a 3x3 digit block with "-", space and backspace on the right). There is no key to leave the
+// keypad: the full keyboard comes back when a text field is focused.
+//
+// Number/date: tap gives ASCII digits, which every field accepts; flicking up gives the script's
+// own digit (transliterated per script). Date/time separators are on flicks.
+val NUMBER_GRID =
+    listOf(
+        listOf("1" to "१", "2" to "२", "3" to "३", "-" to "/"),
+        listOf("4" to "४", "5" to "५", "6" to "६", SpecialKey.SPACE),
+        listOf("7" to "७", "8" to "८", "9" to "९", SpecialKey.BACKSPACE),
+        listOf("," to ":", "0" to "०", "." to "+", SpecialKey.ENTER),
+    )
+
+// Phone: FUTO's separate phone-symbols page is on flicks instead ("," = pause, ";" = wait), and
+// its symbols-page key is a "*" key (flick "#"), the most used dialler symbols.
+val PHONE_GRID =
+    listOf(
+        listOf("1" to "(", "2" to "/", "3" to ")", "-" to "-"),
+        listOf("4" to "N", "5" to ",", "6" to ";", SpecialKey.SPACE),
+        listOf("7" to "*", "8" to "#", "9" to "+", SpecialKey.BACKSPACE),
+        listOf("*" to "#", "0" to "+", "." to ".", SpecialKey.ENTER),
+    )
+
 val SYM2_GRID =
     listOf(
         listOf("∂" to "¹", "∫" to "²", "ε" to "³", "ℝ" to "⁴", "⊕" to "⁵", "⊗" to "⁶", "∇" to "⁷", "ⅈ" to "⁸", "ω" to "⁹", "π" to "⁰"),
@@ -268,6 +292,8 @@ object ScriptManager {
         layers[KeyboardLayer.LATIN] = LATIN_GRID
         layers[KeyboardLayer.SYM] = transliterateGrid(SYM_GRID, script)
         layers[KeyboardLayer.SYM_SHIFT] = transliterateGrid(SYM2_GRID, script)
+        layers[KeyboardLayer.NUMBER] = transliterateGrid(NUMBER_GRID, script)
+        layers[KeyboardLayer.PHONE] = transliterateGrid(PHONE_GRID, script)
 
         val filteredLayers =
             layers.mapValues {

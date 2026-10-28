@@ -548,7 +548,7 @@ class KrKeyIME : InputMethodService() {
             }
 
         val isWordChar = !listOf("।", "॥", ".", ",", "!", "?", "/", "'", "\"", "\\", " ").contains(text)
-        if (!keyboardState.mode.isSymbol() && isWordChar && text.isNotBlank()) {
+        if (!keyboardState.mode.isSymbol() && !keyboardState.mode.isNumeric() && isWordChar && text.isNotBlank()) {
             val ic = currentInputConnection ?: return
             if (currentPeckedWord.isEmpty() && expectedSelStart == -1) {
                 expectedSelStart = (ic.getTextBeforeCursor(10000, 0)?.length ?: 0) + space.length
@@ -568,7 +568,7 @@ class KrKeyIME : InputMethodService() {
         updateBase()
         val mode = keyboardState.mode
         val script = keyboardState.script
-        candidateBar?.visibility = if (!mode.isSymbol() && !isPasswordField) View.VISIBLE else View.GONE
+        candidateBar?.visibility = if (!mode.isSymbol() && !mode.isNumeric() && !isPasswordField) View.VISIBLE else View.GONE
 
         val tf =
             if (!mode.isLatin()) {
@@ -599,7 +599,12 @@ class KrKeyIME : InputMethodService() {
                 "EN"
             }
 
-        spaceBtn?.text = if (mode.isLatin() && !mode.isSymbol()) "English" else script.nativeName
+        spaceBtn?.text =
+            when {
+                mode.isNumeric() -> "␣"
+                mode.isLatin() && !mode.isSymbol() -> "English"
+                else -> script.nativeName
+            }
         spaceBtn?.typeface = tf
 
         val scriptData = ScriptManager.getScriptData(script)
@@ -666,7 +671,9 @@ class KrKeyIME : InputMethodService() {
                 (view.parent as? ViewGroup)?.removeView(view)
 
                 val weight =
-                    if (view.id == R.id.key_space) {
+                    if (keyboardState.mode.isNumeric()) {
+                        1f // keypad: an even grid
+                    } else if (view.id == R.id.key_space) {
                         3.5f
                     } else if (listOf(R.id.key_shift, R.id.key_backspace, R.id.key_sym, R.id.key_enter).contains(view.id)) {
                         1.2f
@@ -1003,11 +1010,28 @@ class KrKeyIME : InputMethodService() {
             keyboardState = keyboardState.withScript(next)
             prefs.edit().putString("last_script", next.name).apply()
         }
+        // Number/phone/date fields get the keypad; other fields get the full keyboard back
+        val keypad = numericKeypadFor(info)
+        keyboardState =
+            if (keypad == null) {
+                keyboardState.withoutNumericKeypad()
+            } else {
+                keyboardState.withNumericKeypad(phone = keypad == KeypadKind.PHONE)
+            }
         if (!restarting || keyboardState.script != oldScript) {
             resetInputState()
         }
         updateUI()
     }
+
+    private enum class KeypadKind { NUMBER, PHONE }
+
+    private fun numericKeypadFor(info: EditorInfo?): KeypadKind? =
+        when ((info?.inputType ?: 0) and InputType.TYPE_MASK_CLASS) {
+            InputType.TYPE_CLASS_NUMBER, InputType.TYPE_CLASS_DATETIME -> KeypadKind.NUMBER
+            InputType.TYPE_CLASS_PHONE -> KeypadKind.PHONE
+            else -> null
+        }
 
     private fun allowsAutoSpace(info: EditorInfo?): Boolean {
         val inputType = info?.inputType ?: return true
@@ -1026,7 +1050,7 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun updatePeckedCandidates() {
-        if (keyboardState.mode.isSymbol() || currentPeckedWord.length < 2 || isPasswordField) {
+        if (keyboardState.mode.isSymbol() || keyboardState.mode.isNumeric() || currentPeckedWord.length < 2 || isPasswordField) {
             candidateView?.showCandidates(emptyList())
             return
         }

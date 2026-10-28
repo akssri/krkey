@@ -35,6 +35,7 @@ data class KeyboardState(
                 is InputMode.LatinNormal -> InputMode.IndicNormal
                 is InputMode.Symbol -> if (mode.fromLatin) InputMode.IndicNormal else InputMode.LatinNormal
                 is InputMode.SymbolShifted -> if (mode.fromLatin) InputMode.IndicNormal else InputMode.LatinNormal
+                is InputMode.Numeric -> mode
             }
         return copy(mode = newMode, isShiftLocked = false)
     }
@@ -57,9 +58,24 @@ data class KeyboardState(
                 is InputMode.Symbol -> if (mode.fromLatin) InputMode.LatinNormal else InputMode.IndicNormal
 
                 is InputMode.SymbolShifted -> if (mode.fromLatin) InputMode.LatinNormal else InputMode.IndicNormal
+
+                // The keypad has no symbol key; it is left by leaving the field
+                is InputMode.Numeric -> mode
             }
 
         return copy(mode = newMode, isShiftLocked = false)
+    }
+
+    /** Switches to the numeric keypad, remembering which full keyboard to return to. */
+    fun withNumericKeypad(phone: Boolean): KeyboardState {
+        val fromLatin = if (mode is InputMode.Numeric) mode.fromLatin else mode.isLatin()
+        return copy(mode = InputMode.Numeric(phone, fromLatin), isShiftLocked = false)
+    }
+
+    /** Leaves the numeric keypad (e.g. on moving to a text field); other modes are kept. */
+    fun withoutNumericKeypad(): KeyboardState {
+        if (mode !is InputMode.Numeric) return this
+        return copy(mode = if (mode.fromLatin) InputMode.LatinNormal else InputMode.IndicNormal)
     }
 
     fun withBaseChar(baseChar: String) = copy(currentBaseChar = baseChar)
