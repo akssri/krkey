@@ -39,6 +39,14 @@ class FlickKeyView
         private val flickTextView: TextView
         private val hintTextView: TextView
 
+        // Hints for four-direction keys (left, right, down); up uses hintTextView
+        private val leftHintView: TextView
+        private val rightHintView: TextView
+        private val downHintView: TextView
+
+        /** Set for four-direction keys (the tag still holds `base to up`). */
+        var flickKey: FlickKey? = null
+
         private val density = context.resources.displayMetrics.density
         private val popupYOffset = (-80f * density).toInt()
         private val hintPaddingTop = (-1f * density).toInt()
@@ -75,9 +83,25 @@ class FlickKeyView
                     setTextColor(ContextCompat.getColor(context, R.color.hint_text_color))
                 }
 
+            val directionHint = { g: Int ->
+                TextView(context).apply {
+                    textSize = 12f
+                    gravity = g
+                    setPadding(hintPaddingRight, 0, hintPaddingRight, 0)
+                    setTextColor(ContextCompat.getColor(context, R.color.hint_text_color))
+                    visibility = View.GONE
+                }
+            }
+            leftHintView = directionHint(Gravity.START or Gravity.CENTER_VERTICAL)
+            rightHintView = directionHint(Gravity.END or Gravity.CENTER_VERTICAL)
+            downHintView = directionHint(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+
             addView(baseTextView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             addView(flickTextView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             addView(hintTextView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            addView(leftHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            addView(rightHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            addView(downHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
             initPopup()
         }
@@ -109,6 +133,27 @@ class FlickKeyView
                 baseTextView.visibility = View.VISIBLE
                 flickTextView.visibility = View.INVISIBLE
             }
+        }
+
+        /** Hints for the extra directions of a four-direction key; all null for a normal key. */
+        fun setDirectionalHints(
+            left: String?,
+            right: String?,
+            down: String?,
+        ) {
+            val directional = left != null || right != null || down != null
+            // Four-direction keys show the up flick centred above, like the other directions
+            hintTextView.gravity = if (directional) Gravity.TOP or Gravity.CENTER_HORIZONTAL else Gravity.TOP or Gravity.END
+            for ((view, text) in listOf(leftHintView to left, rightHintView to right, downHintView to down)) {
+                view.text = text ?: ""
+                view.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+            }
+        }
+
+        fun setTypefaceForHints(typeface: Typeface?) {
+            leftHintView.typeface = typeface
+            rightHintView.typeface = typeface
+            downHintView.typeface = typeface
         }
 
         fun showPopup(text: String?) {

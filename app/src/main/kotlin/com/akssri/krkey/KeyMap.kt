@@ -160,12 +160,29 @@ fun String.toBrahmiScript(targetScript: BrahmiScript): String {
 // LAYOUT DEFINITIONS (INDEPENDENT GRIDS)
 // -------------------------------------------------------------------
 
+/**
+ * A key with flicks in four directions (only for the bottom-row punctuation keys; other keys are
+ * `base to up` pairs). An empty direction falls back to the base character.
+ */
+data class FlickKey(
+    val base: String,
+    val up: String,
+    val left: String = "",
+    val right: String = "",
+    val down: String = "",
+)
+
+// No down flicks: on the bottom row they are hard to hit (a down flick gives the base)
+val COMMA_KEY = FlickKey(",", up = "'", left = "-", right = "\"")
+val DANDA_KEY = FlickKey("\u0964", up = "?", left = "!", right = "-")
+val PERIOD_KEY = FlickKey(".", up = "?", left = "!", right = "-")
+
 val INDIC_GRID =
     listOf(
         listOf("ओ" to "ऒ", "क" to "ख", "ब" to "भ", "ड" to "ढ", "ट" to "ठ", "ऋ" to "ॠ", "ह" to "ङ", "ग" to "घ", "द" to "ध", "ज" to "झ"),
         listOf("उ" to "ऊ", "ए" to "ऎ", "अ" to "आ", "इ" to "ई", "य" to "ळ", "प" to "फ", "र" to "ष", "व" to "ल", "त" to "थ"),
         listOf(SpecialKey.SHIFT, "ऐ" to "औ", "ं" to "ँ", "म" to "ण", "न" to "ञ", "ः" to "ऽ", "च" to "छ", "स" to "श", SpecialKey.BACKSPACE),
-        listOf(SpecialKey.SYMBOL, "," to "'", SpecialKey.GLOBE, SpecialKey.SPACE, "।" to "?", SpecialKey.ENTER),
+        listOf(SpecialKey.SYMBOL, COMMA_KEY, SpecialKey.GLOBE, SpecialKey.SPACE, DANDA_KEY, SpecialKey.ENTER),
     )
 
 val LATIN_GRID =
@@ -173,7 +190,7 @@ val LATIN_GRID =
         listOf("q" to "Q", "w" to "W", "e" to "E", "r" to "R", "t" to "T", "y" to "Y", "u" to "U", "i" to "I", "o" to "O", "p" to "P"),
         listOf("a" to "A", "s" to "S", "d" to "D", "f" to "F", "g" to "G", "h" to "H", "j" to "J", "k" to "K", "l" to "L"),
         listOf(SpecialKey.SHIFT, "z" to "Z", "x" to "X", "c" to "C", "v" to "V", "b" to "B", "n" to "N", "m" to "M", SpecialKey.BACKSPACE),
-        listOf(SpecialKey.SYMBOL, "," to "'", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "?", SpecialKey.ENTER),
+        listOf(SpecialKey.SYMBOL, COMMA_KEY, SpecialKey.GLOBE, SpecialKey.SPACE, PERIOD_KEY, SpecialKey.ENTER),
     )
 
 val SYM_GRID =
@@ -221,7 +238,7 @@ val TAMIL_INDIC_GRID =
         listOf("ஒ" to "ஓ", "ஹ" to "ஷ", "ய" to "ஜ", "ஸ" to "ஶ", "ள" to "ழ", "ட" to "ண", "ச" to "ஞ"),
         listOf("உ" to "ஊ", "எ" to "ஏ", "அ" to "ஆ", "இ" to "ஈ", "க" to "ங", "ர" to "ற", "த" to "ந"),
         listOf(SpecialKey.SHIFT, "ஐ" to "ஔ", "ஂ" to "ஃ", "வ" to "ல", "ன" to "ந", "ப" to "ம", SpecialKey.BACKSPACE),
-        listOf(SpecialKey.SYMBOL, "," to "'", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "?", SpecialKey.ENTER),
+        listOf(SpecialKey.SYMBOL, COMMA_KEY, SpecialKey.GLOBE, SpecialKey.SPACE, PERIOD_KEY, SpecialKey.ENTER),
     )
 
 // -------------------------------------------------------------------
@@ -331,7 +348,17 @@ object ScriptManager {
                 row ->
             row.map {
                     item ->
-                if (item is Pair<*, *>) (item.first as String).toBrahmiScript(script) to (item.second as String).toBrahmiScript(script) else item
+                when (item) {
+                    is Pair<*, *> -> (item.first as String).toBrahmiScript(script) to (item.second as String).toBrahmiScript(script)
+                    is FlickKey -> {
+                        // A direction that transliterates to the base (e.g. a double danda in
+                        // scripts that use ".") is dropped
+                        val base = item.base.toBrahmiScript(script)
+                        val dir = { s: String -> s.toBrahmiScript(script).let { if (it == base) "" else it } }
+                        FlickKey(base, dir(item.up), dir(item.left), dir(item.right), dir(item.down))
+                    }
+                    else -> item
+                }
             }
         }
     }

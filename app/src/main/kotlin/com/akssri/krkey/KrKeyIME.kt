@@ -530,7 +530,7 @@ class KrKeyIME : InputMethodService() {
                     onSpaceTap()
                 }
                 // A finger already moving up may be mid-flick: let it finish and commit on lift
-                state.specialKey == null && state.activeKey != null && !isFlickInProgress(state.gesturePath) -> {
+                state.specialKey == null && state.activeKey != null && !isKeyFlickInProgress(state) -> {
                     stopPointer(state)
                     state.released = true
                     if (learningAllowed) DebugLog.d { "rollover commits the older tap" }
@@ -660,6 +660,14 @@ class KrKeyIME : InputMethodService() {
                 }
 
             k.setVisualState(displayBase, displayFlick, false)
+            val fk = k.flickKey
+            if (fk == null) {
+                k.setDirectionalHints(null, null, null)
+            } else {
+                val hint = { s: String -> formatKeyText(s, keyboardState.currentBaseChar, scriptData) }
+                k.setDirectionalHints(hint(fk.left), hint(fk.right), hint(fk.down))
+                k.setTypefaceForHints(tf)
+            }
         }
     }
 
@@ -682,10 +690,13 @@ class KrKeyIME : InputMethodService() {
             for (item in rowItems) {
                 val view =
                     when (item) {
-                        is Pair<*, *> -> {
+                        is Pair<*, *>, is FlickKey -> {
                             if (poolIdx < flickKeyPool.size) {
                                 flickKeyPool[poolIdx++].apply {
-                                    tag = item
+                                    // Four-direction keys keep `base to up` as the tag, so code that
+                                    // only knows pairs keeps working; the rest is on the view
+                                    flickKey = item as? FlickKey
+                                    tag = if (item is FlickKey) item.base to item.up else item
                                     activeKeys.add(this)
                                 }
                             } else {
@@ -832,7 +843,15 @@ class KrKeyIME : InputMethodService() {
                             val scriptData = ScriptManager.getScriptData(keyboardState.script)
                             val base = formatKeyText(tuple?.first as? String ?: "", keyboardState.currentBaseChar, scriptData)
                             val flick = formatKeyText(tuple?.second as? String ?: "", keyboardState.currentBaseChar, scriptData)
-                            k.showPopup(if (isFlickGesture(state.gesturePath)) flick else base)
+                            k.showPopup(
+                                if (k.flickKey != null) {
+                                    formatKeyText(rawKeyOutput(k, state.gesturePath), keyboardState.currentBaseChar, scriptData)
+                                } else if (isFlickGesture(state.gesturePath)) {
+                                    flick
+                                } else {
+                                    base
+                                },
+                            )
                         }
                     } else {
                         // Latin/gesture mode
@@ -852,14 +871,22 @@ class KrKeyIME : InputMethodService() {
                                 val base = if (rawBase.length == 1 && rawBase.first().isLetter()) rawBase.lowercase() else rawBase
                                 val flick = if (rawBase.length == 1 && rawBase.first().isLetter()) rawBase.uppercase() else rawFlick
 
-                                val text = if (verticalDist > FLICK_VISUAL_THRESHOLD_DP * density) flick else base
+                                val text =
+                                    if (k.flickKey != null) {
+                                        rawKeyOutput(k, state.gesturePath)
+                                    } else if (verticalDist > FLICK_VISUAL_THRESHOLD_DP * density) {
+                                        flick
+                                    } else {
+                                        base
+                                    }
                                 if (text != state.lastPopupText) {
                                     state.lastPopupText = text
                                     k.showPopup(text)
                                 }
                             }
 
-                            if (splitGapWeight == 0f && !isPasswordField &&
+                            // Four-direction (punctuation) keys never start a swipe: their sideways flicks would
+                            if (splitGapWeight == 0f && !isPasswordField && state.activeKey?.flickKey == null &&
                                 (
                                     (pathDist(state.gesturePath) > SWIPE_START_DISTANCE_DP * density && !isLikelyFlick) ||
                                         (movedToNewKey && !isLikelyFlick) ||
@@ -967,7 +994,7 @@ class KrKeyIME : InputMethodService() {
         val tuple = key.tag as? Pair<*, *> ?: return
         val scriptData = ScriptManager.getScriptData(keyboardState.script)
         val isFlick = isFlickGesture(path)
-        val raw = if (isFlick) tuple.second as String else tuple.first as String
+        val raw = rawKeyOutput(key, path)
         // Debug builds only; never in password/incognito fields (it records typed characters)
         if (learningAllowed) {
             DebugLog.d { "tap at (${path.first().x.toInt()},${path.first().y.toInt()})->(${path.last().x.toInt()},${path.last().y.toInt()}) key=$tuple flick=$isFlick raw='$raw' base='${keyboardState.currentBaseChar}'" }
@@ -1433,6 +1460,50 @@ class KrKeyIME : InputMethodService() {
 
     // Flick up on the space bar in an Indic layer (in Latin it is just a space)
     private fun isZwnjFlick(state: PointerState): Boolean = state.specialKey == SpecialKey.SPACE && !keyboardState.mode.isLatin() && isFlickGesture(state.gesturePath)
+
+    private enum class FlickDirection { UP, LEFT, RIGHT, DOWN }
+
+    // Direction of a flick on a four-direction key: the dominant axis, past the flick threshold
+    private fun flickDirection(path: List<PointF>): FlickDirection? {
+        if (path.size < 2) return null
+        val dx = path.last().x - path.first().x
+        val dy = path.last().y - path.first().y
+        if (Math.hypot(dx.toDouble(), dy.toDouble()) < FLICK_VERTICAL_THRESHOLD_DP * density) return null
+        return if (Math.abs(dx) > Math.abs(dy)) {
+            if (dx < 0) FlickDirection.LEFT else FlickDirection.RIGHT
+        } else {
+            if (dy < 0) FlickDirection.UP else FlickDirection.DOWN
+        }
+    }
+
+    /** Raw text a key gives for this touch path: base, up flick, or (four-direction keys) any direction. */
+    private fun rawKeyOutput(
+        key: FlickKeyView,
+        path: List<PointF>,
+    ): String {
+        val fk = key.flickKey
+        if (fk == null) {
+            val tuple = key.tag as? Pair<*, *> ?: return ""
+            return (if (isFlickGesture(path)) tuple.second else tuple.first) as String
+        }
+        val text =
+            when (flickDirection(path)) {
+                FlickDirection.UP -> fk.up
+                FlickDirection.LEFT -> fk.left
+                FlickDirection.RIGHT -> fk.right
+                FlickDirection.DOWN -> fk.down
+                null -> fk.base
+            }
+        return text.ifEmpty { fk.base }
+    }
+
+    // Rollover leaves a key mid-flick alone: any direction for four-direction keys, else upward
+    private fun isKeyFlickInProgress(state: PointerState): Boolean =
+        if (state.activeKey?.flickKey != null) {
+            pathDist(state.gesturePath) > FLICK_ROLLOVER_SLOP_DP * density
+        } else {
+            isFlickInProgress(state.gesturePath)
+        }
 
     private fun isFlickInProgress(path: List<PointF>): Boolean = path.size >= 2 && path.first().y - path.last().y > FLICK_ROLLOVER_SLOP_DP * density
 
