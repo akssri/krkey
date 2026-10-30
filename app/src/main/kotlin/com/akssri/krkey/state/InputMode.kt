@@ -24,7 +24,6 @@ object KeyboardLayer {
     const val INDIC = 0
     const val LATIN = 1
     const val SYM = 2
-    const val SYM_SHIFT = 3
     const val NUMBER = 4
     const val PHONE = 5
 }
@@ -39,17 +38,13 @@ sealed class InputMode(val layer: Int) {
 
     data class Symbol(val fromLatin: Boolean) : InputMode(KeyboardLayer.SYM)
 
-    data class SymbolShifted(val fromLatin: Boolean) : InputMode(KeyboardLayer.SYM_SHIFT)
-
     /** Keypad for number/phone/date fields; fromLatin is the full keyboard to restore afterwards. */
     data class Numeric(val phone: Boolean, val fromLatin: Boolean) :
         InputMode(if (phone) KeyboardLayer.PHONE else KeyboardLayer.NUMBER)
 
-    fun isLatin() = this is LatinNormal || (this is Symbol && fromLatin) || (this is SymbolShifted && fromLatin)
+    fun isLatin() = this is LatinNormal || (this is Symbol && fromLatin)
 
-    fun isSymbol() = this is Symbol || this is SymbolShifted
-
-    fun isShifted() = this is SymbolShifted
+    fun isSymbol() = this is Symbol
 
     fun isNumeric() = this is Numeric
 }

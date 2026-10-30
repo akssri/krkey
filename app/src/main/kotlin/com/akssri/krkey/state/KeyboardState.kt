@@ -26,7 +26,6 @@ data class KeyboardState(
     val mode: InputMode = InputMode.IndicNormal,
     val script: BrahmiScript = BrahmiScript.DEVANAGARI,
     val currentBaseChar: String = "",
-    val isShiftLocked: Boolean = false,
 ) {
     fun toggleLanguage(): KeyboardState {
         val newMode =
@@ -34,20 +33,9 @@ data class KeyboardState(
                 is InputMode.IndicNormal -> InputMode.LatinNormal
                 is InputMode.LatinNormal -> InputMode.IndicNormal
                 is InputMode.Symbol -> if (mode.fromLatin) InputMode.IndicNormal else InputMode.LatinNormal
-                is InputMode.SymbolShifted -> if (mode.fromLatin) InputMode.IndicNormal else InputMode.LatinNormal
                 is InputMode.Numeric -> mode
             }
-        return copy(mode = newMode, isShiftLocked = false)
-    }
-
-    fun toggleShift(): KeyboardState {
-        val newMode =
-            when (mode) {
-                is InputMode.Symbol -> InputMode.SymbolShifted(mode.fromLatin)
-                is InputMode.SymbolShifted -> InputMode.Symbol(mode.fromLatin)
-                else -> mode
-            }
-        return copy(mode = newMode, isShiftLocked = false)
+        return copy(mode = newMode)
     }
 
     fun toggleSymbol(wasLatinMode: Boolean = mode.isLatin()): KeyboardState {
@@ -57,19 +45,17 @@ data class KeyboardState(
 
                 is InputMode.Symbol -> if (mode.fromLatin) InputMode.LatinNormal else InputMode.IndicNormal
 
-                is InputMode.SymbolShifted -> if (mode.fromLatin) InputMode.LatinNormal else InputMode.IndicNormal
-
                 // The keypad has no symbol key; it is left by leaving the field
                 is InputMode.Numeric -> mode
             }
 
-        return copy(mode = newMode, isShiftLocked = false)
+        return copy(mode = newMode)
     }
 
     /** Switches to the numeric keypad, remembering which full keyboard to return to. */
     fun withNumericKeypad(phone: Boolean): KeyboardState {
         val fromLatin = if (mode is InputMode.Numeric) mode.fromLatin else mode.isLatin()
-        return copy(mode = InputMode.Numeric(phone, fromLatin), isShiftLocked = false)
+        return copy(mode = InputMode.Numeric(phone, fromLatin))
     }
 
     /** Leaves the numeric keypad (e.g. on moving to a text field); other modes are kept. */

@@ -469,13 +469,10 @@ class KrKeyIME : InputMethodService() {
         updateUI()
     }
 
+    // Shift is on the letter layers only: it switches between the script and English
     private fun onShift() {
-        if (keyboardState.mode.isSymbol()) {
-            keyboardState = keyboardState.toggleShift() // Shift symbol layer (Layer 2)
-        } else {
-            commitCurrentInputKeepingSpaceState()
-            keyboardState = keyboardState.toggleLanguage()
-        }
+        commitCurrentInputKeepingSpaceState()
+        keyboardState = keyboardState.toggleLanguage()
         updateUI()
     }
 
@@ -666,9 +663,7 @@ class KrKeyIME : InputMethodService() {
         )
 
         shiftBtn?.setTextIfChanged(
-            if (mode.isSymbol()) {
-                if (keyboardState.isShiftLocked) "⇪" else "⇧"
-            } else if (mode.isLatin()) {
+            if (mode.isLatin()) {
                 script.firstSyllable
             } else {
                 "EN"
@@ -1247,7 +1242,7 @@ class KrKeyIME : InputMethodService() {
         val res = predictionManager.predictGesture(path)
         if (res.isNotEmpty()) {
             val word = res[0].first
-            val shouldCaps = if (afterSwipedWord) keyboardState.mode.isShifted() else isSentenceStart()
+            val shouldCaps = !afterSwipedWord && isSentenceStart()
             lastGestureWord = word
             val out = if (shouldCaps) word.replaceFirstChar { it.uppercase() } else word
 
@@ -1493,7 +1488,6 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun isSentenceStart(): Boolean {
-        if (keyboardState.mode.isShifted()) return true
         var text = textBefore(50) ?: return true
         val currentWordLen = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.length else 0
         if (currentWordLen > 0 && text.length >= currentWordLen) text = text.substring(0, text.length - currentWordLen)

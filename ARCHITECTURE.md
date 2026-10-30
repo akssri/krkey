@@ -45,13 +45,12 @@ krkey-android is a multi-script Brahmic IME (Input Method Editor) with Japanese-
 **Key Classes**:
 - **`InputMode`** (sealed class)
   - `IndicNormal`, `LatinNormal`, `LatinShifted`
-  - `Symbol(fromLatin: Boolean)`, `SymbolShifted(fromLatin: Boolean)`
-  - Helper methods: `isLatin()`, `isSymbol()`, `isShifted()`
+  - `Symbol(fromLatin: Boolean)` (the single symbol layer), `Numeric(phone, fromLatin)`
+  - Helper methods: `isLatin()`, `isSymbol()`, `isNumeric()`
 
 - **`KeyboardState`** (data class)
   - Fields: `mode: InputMode`, `script: BrahmiScript`, `currentBaseChar: String`, `isShiftLocked: Boolean`
   - Transformation methods (return new instances):
-    - `toggleShift()` - Smart shift based on mode
     - `toggleSymbol()` - Remembers Latin/Indic context via `fromLatin` flag
     - `toggleLanguage()` - Switch between Indic and Latin
     - `withBaseChar(char)` - Update composition base

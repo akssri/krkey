@@ -193,11 +193,44 @@ val LATIN_GRID =
         listOf(SpecialKey.SYMBOL, COMMA_KEY, SpecialKey.GLOBE, SpecialKey.SPACE, PERIOD_KEY, SpecialKey.ENTER),
     )
 
+// Symbols. Digits tap the script's digit, flick up for ASCII and right for the superscript; the
+// left key of row 3 (shift on the letter layers) is a plain & / ~ key, since there is only one
+// symbol layer.
 val SYM_GRID =
     listOf(
-        listOf("१" to "1", "२" to "2", "३" to "3", "४" to "4", "५" to "5", "६" to "6", "७" to "7", "८" to "8", "९" to "9", "०" to "0"),
-        listOf("*" to "`", "#" to "^", "+" to "|", "-" to "_", "=" to "§", "(" to "{", ")" to "}", "@" to "%", ";" to ":"),
-        listOf(SpecialKey.SHIFT, "ऌ" to "ॡ", "़" to "ॐ", "/" to "\\", "[" to "&", "]" to "~", "₹" to "$", SpecialKey.BACKSPACE),
+        listOf(
+            FlickKey("\u0967", up = "1", right = "\u00B9"),
+            FlickKey("\u0968", up = "2", right = "\u00B2"),
+            FlickKey("\u0969", up = "3", right = "\u00B3"),
+            FlickKey("\u096A", up = "4", right = "\u2074"),
+            FlickKey("\u096B", up = "5", right = "\u2075"),
+            FlickKey("\u096C", up = "6", right = "\u2076"),
+            FlickKey("\u096D", up = "7", right = "\u2077"),
+            FlickKey("\u096E", up = "8", right = "\u2078"),
+            FlickKey("\u096F", up = "9", right = "\u2079"),
+            FlickKey("\u0966", up = "0", right = "\u2070"),
+        ),
+        listOf(
+            "*" to "`",
+            FlickKey("#", up = "^", right = "\u221A"),
+            "+" to "\u00B1",
+            "-" to "_",
+            "=" to "\u00D7",
+            "(" to "{",
+            ")" to "}",
+            "@" to "%",
+            ";" to ":",
+        ),
+        listOf(
+            "&" to "~",
+            "\u090C" to "\u0961",
+            "\u093C" to "\u0950",
+            FlickKey("/", up = "\\", right = "|"),
+            "[" to "<",
+            "]" to ">",
+            "\u20B9" to "$",
+            SpecialKey.BACKSPACE,
+        ),
         listOf(SpecialKey.SYMBOL, "," to "\"", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "!", SpecialKey.ENTER),
     )
 
@@ -223,14 +256,6 @@ val PHONE_GRID =
         listOf("4" to "N", "5" to ",", "6" to ";", SpecialKey.SPACE),
         listOf("7" to "*", "8" to "#", "9" to "+", SpecialKey.BACKSPACE),
         listOf("*" to "#", "0" to "+", "." to ".", SpecialKey.ENTER),
-    )
-
-val SYM2_GRID =
-    listOf(
-        listOf("∂" to "¹", "∫" to "²", "ε" to "³", "ℝ" to "⁴", "⊕" to "⁵", "⊗" to "⁶", "∇" to "⁷", "ⅈ" to "⁸", "ω" to "⁹", "π" to "⁰"),
-        listOf("α" to "∏", "σ" to "∑", "δ" to "⁺", "φ" to "⁻", "γ" to "⁼", "η" to "⁽", "±" to ")", "κ" to "∅", "λ" to "√"),
-        listOf(SpecialKey.SHIFT, "ψ" to "∛", "χ" to "×", "∈" to "∉", "⊆" to "⊈", "β" to "⊂", "ν" to "⋃", "μ" to "⋂", SpecialKey.BACKSPACE),
-        listOf(SpecialKey.SYMBOL, "," to "\"", SpecialKey.GLOBE, SpecialKey.SPACE, "." to "!", SpecialKey.ENTER),
     )
 
 val TAMIL_INDIC_GRID =
@@ -373,7 +398,6 @@ object ScriptManager {
         layers[KeyboardLayer.INDIC] = indicLayer
         layers[KeyboardLayer.LATIN] = LATIN_GRID
         layers[KeyboardLayer.SYM] = transliterateGrid(SYM_GRID, script)
-        layers[KeyboardLayer.SYM_SHIFT] = transliterateGrid(SYM2_GRID, script)
         layers[KeyboardLayer.NUMBER] = transliterateGrid(NUMBER_GRID, script)
         layers[KeyboardLayer.PHONE] = transliterateGrid(PHONE_GRID, script)
 
