@@ -243,8 +243,13 @@ class KrKeyIME : InputMethodService() {
     private var brahmiTypeface: Typeface? = null
 
     // Gesture Tuning
-    private val FLICK_VERTICAL_THRESHOLD_DP = 15f
-    private val FLICK_VISUAL_THRESHOLD_DP = 10f
+    // A flick is a move past 30% of the key height (15dp at the default 50dp keys), kept within
+    // 12–20dp so it is neither twitchy on short landscape keys nor sluggish on tall ones; the
+    // preview shows its target from two thirds of that
+    private val FLICK_THRESHOLD_KEY_FRACTION = 0.3f
+    private val FLICK_THRESHOLD_MIN_DP = 12f
+    private val FLICK_THRESHOLD_MAX_DP = 20f
+    private var flickThresholdPx = 0f
     private val FLICK_MIN_DISTANCE_DP = 10f
     private val FLICK_ROLLOVER_SLOP_DP = 6f
     private val FLICK_VERTICALITY_RATIO = 1.2f
@@ -315,6 +320,7 @@ class KrKeyIME : InputMethodService() {
                 prefs.getInt("keyboard_height_portrait", 220)
             }
         keyHeightPx = (heightDp / 4.4f * density).toInt()
+        flickThresholdPx = (keyHeightPx * FLICK_THRESHOLD_KEY_FRACTION).coerceIn(FLICK_THRESHOLD_MIN_DP * density, FLICK_THRESHOLD_MAX_DP * density)
         layout.findViewById<FrameLayout>(R.id.keyboard_frame).layoutParams =
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (heightDp * density).toInt())
         if (landscapeMode) {
@@ -1316,7 +1322,7 @@ class KrKeyIME : InputMethodService() {
                                 val text =
                                     if (k.flickKey != null) {
                                         rawKeyOutput(k, state.gesturePath)
-                                    } else if (verticalDist > FLICK_VISUAL_THRESHOLD_DP * density) {
+                                    } else if (verticalDist > flickThresholdPx * 2f / 3f) {
                                         flick
                                     } else {
                                         base
@@ -1993,7 +1999,7 @@ class KrKeyIME : InputMethodService() {
         if (path.size < 2) return null
         val dx = path.last().x - path.first().x
         val dy = path.last().y - path.first().y
-        if (Math.hypot(dx.toDouble(), dy.toDouble()) < FLICK_VERTICAL_THRESHOLD_DP * density) return null
+        if (Math.hypot(dx.toDouble(), dy.toDouble()) < flickThresholdPx) return null
         return if (Math.abs(dx) > Math.abs(dy)) {
             if (dx < 0) FlickDirection.LEFT else FlickDirection.RIGHT
         } else {
@@ -2039,7 +2045,7 @@ class KrKeyIME : InputMethodService() {
         val dist = pathDist(path)
         val verticalDist = start.y - end.y
         val horizontalDist = Math.abs(end.x - start.x)
-        return verticalDist > FLICK_VERTICAL_THRESHOLD_DP * density &&
+        return verticalDist > flickThresholdPx &&
             horizontalDist < verticalDist * FLICK_VERTICALITY_RATIO &&
             dist > FLICK_MIN_DISTANCE_DP * density
     }
