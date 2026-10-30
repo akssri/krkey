@@ -25,6 +25,7 @@ Create an extensible multi-script Brahmic IME for Android using Japanese-style f
 - **Unified Symbol Modes:** `Symbol(fromLatin: Boolean)` and `SymbolShifted(fromLatin: Boolean)` replace separate Indic/Latin symbol modes. The `fromLatin` flag preserves context for returning to the correct base layer and selecting the right numeral style.
 - **Landscape Overlay Insets:** In `onComputeInsets`, the touchable region width MUST use `decorView.width` (not `displayMetrics.widthPixels`) — the latter doesn't account for side navigation bars/cutouts, causing dead touch zones on the right side in landscape.
 - **No Windows on the Key Path:** Key previews are views in `KeyPreviewLayer`, laid over the input view (the root is a `FrameLayout` of the keyboard and the layer), moved by translation and shown/hidden. Never use `PopupWindow` (or anything that adds, relayouts or removes a window) per key press: each window-manager call is a synchronous binder call to `system_server` that took 25–130 ms on a ZTE Libero Flip (~1 ms on an Xperia 1), making typing stall. Top-row previews are clamped to the top of the keyboard window, over the candidate bar.
+- **Relabel Only What Changed:** `updateUI` relabels every key after every keystroke. Set key and button text with `setTextIfChanged`, never plain `setText`: `setText` re-shapes the text and relayouts the whole keyboard even when the text is unchanged.
 
 ## Key Domain Knowledge
 - **Build:** Kotlin 2.1.0, AGP 8.7.3, compileSdk/targetSdk 36, minSdk 26, JVM target 17.

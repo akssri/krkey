@@ -621,28 +621,31 @@ class KrKeyIME : InputMethodService() {
                 Typeface.DEFAULT
             }
 
-        symBtn?.text =
+        symBtn?.setTextIfChanged(
             if (mode.isSymbol()) {
                 if (mode.isLatin()) "abc" else "अल्".toBrahmiScript(script)
             } else {
                 "१२३".toBrahmiScript(script)
-            }
+            },
+        )
 
-        shiftBtn?.text =
+        shiftBtn?.setTextIfChanged(
             if (mode.isSymbol()) {
                 if (keyboardState.isShiftLocked) "⇪" else "⇧"
             } else if (mode.isLatin()) {
                 script.firstSyllable
             } else {
                 "EN"
-            }
+            },
+        )
 
-        spaceBtn?.text =
+        spaceBtn?.setTextIfChanged(
             when {
                 mode.isNumeric() -> "␣"
                 mode.isLatin() && !mode.isSymbol() -> "English"
                 else -> script.nativeName
-            }
+            },
+        )
         spaceBtn?.typeface = tf
 
         val scriptData = ScriptManager.getScriptData(script)

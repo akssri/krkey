@@ -19,12 +19,21 @@ package com.akssri.krkey
 
 import android.content.Context
 import android.graphics.Typeface
+import android.text.TextUtils
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+
+/**
+ * setText re-shapes the text and requests a layout of the whole keyboard even when the text is
+ * the same; updateUI relabels every key after every keystroke, so it must skip unchanged labels.
+ */
+internal fun TextView.setTextIfChanged(s: CharSequence) {
+    if (!TextUtils.equals(text, s)) text = s
+}
 
 class FlickKeyView
     @JvmOverloads
@@ -107,9 +116,11 @@ class FlickKeyView
             flick: String,
             isFlickActive: Boolean,
         ) {
-            baseTextView.text = base
-            hintTextView.text = flick
-            flickTextView.text = flick
+            // updateUI calls this for every key after every keystroke; setText re-shapes the text and
+            // requests a layout of the whole keyboard even when nothing changed, so skip unchanged labels
+            baseTextView.setTextIfChanged(base)
+            hintTextView.setTextIfChanged(flick)
+            flickTextView.setTextIfChanged(flick)
 
             if (isFlickActive) {
                 baseTextView.visibility = View.INVISIBLE
@@ -130,7 +141,7 @@ class FlickKeyView
             // Four-direction keys show the up flick centred above, like the other directions
             hintTextView.gravity = if (directional) Gravity.TOP or Gravity.CENTER_HORIZONTAL else Gravity.TOP or Gravity.END
             for ((view, text) in listOf(leftHintView to left, rightHintView to right, downHintView to down)) {
-                view.text = text ?: ""
+                view.setTextIfChanged(text ?: "")
                 view.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
             }
         }
