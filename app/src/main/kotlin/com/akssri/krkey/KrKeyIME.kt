@@ -1046,21 +1046,12 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun updateBase() {
-        val ic = currentInputConnection ?: return
-        val text = textBefore(2)
-        val last =
-            if (!text.isNullOrEmpty()) {
-                if (text.length >= 2 && Character.isSurrogatePair(text[text.length - 2], text[text.length - 1])) {
-                    text.substring(text.length - 2)
-                } else {
-                    text.substring(text.length - 1)
-                }
-            } else {
-                ""
-            }
-
+        if (currentInputConnection == null) return
+        // The whole trailing conjunct, so vowel keys show it with its vowel sign (not just the
+        // last consonant). 32 UTF-16 units cover the longest one even in non-BMP scripts (2 units
+        // per character): 4 consonants each with a nukta, and 3 viramas
         val scriptData = ScriptManager.getScriptData(keyboardState.script)
-        keyboardState = keyboardState.withBaseChar(if (scriptData.prefixableChars.contains(last)) last else "")
+        keyboardState = keyboardState.withBaseChar(scriptData.keyBase(textBefore(32) ?: ""))
     }
 
     override fun onUpdateSelection(

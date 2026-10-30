@@ -252,7 +252,57 @@ data class ScriptData(
     val vowelToMatraMap: Map<String, String>,
     val prefixableChars: Set<String>,
     val layers: Map<Int, List<List<Any>>>,
+    val virama: String = "",
+    val nukta: String = "",
 ) {
+    /** True if [s] ends in a consonant, optionally followed by a nukta. */
+    fun endsWithConsonant(s: String): Boolean {
+        if (s.isEmpty()) return false
+        val last = s.codePointBefore(s.length)
+        val lastStr = String(Character.toChars(last))
+        if (lastStr in consonants) return true
+        if (lastStr != nukta || s.length <= lastStr.length) return false
+        val rest = s.dropLast(lastStr.length)
+        return String(Character.toChars(rest.codePointBefore(rest.length))) in consonants
+    }
+
+    /**
+     * What the key faces build on, from the text before the cursor: the trailing consonant
+     * cluster (up to [MAX_CLUSTER] consonants joined by virama; a nukta belongs to its consonant,
+     * and any consonant may carry one, as in izzat),
+     * so vowel keys show the whole conjunct with its vowel sign, or a trailing vowel (for marks
+     * like anusvara), or "" otherwise. A ZWNJ is not part of a cluster, so it breaks it.
+     */
+    fun keyBase(textBefore: String): String {
+        val cps = textBefore.codePoints().toArray()
+        if (cps.isEmpty()) return ""
+        val str = { cp: Int -> String(Character.toChars(cp)) }
+
+        // Start index of a consonant (with an optional nukta) ending just before [end], or -1
+        fun consonantStart(end: Int): Int {
+            var j = end - 1
+            if (j < 0) return -1
+            if (str(cps[j]) == nukta) j--
+            return if (j >= 0 && str(cps[j]) in consonants) j else -1
+        }
+
+        val last = str(cps.last())
+        var start = consonantStart(cps.size)
+        if (start < 0) return if (last in prefixableChars && last !in consonants) last else ""
+        var count = 1
+        while (count < MAX_CLUSTER && start >= 2 && str(cps[start - 1]) == virama) {
+            val prev = consonantStart(start - 1)
+            if (prev < 0) break
+            start = prev
+            count++
+        }
+        return cps.copyOfRange(start, cps.size).joinToString("") { str(it) }
+    }
+
+    private companion object {
+        const val MAX_CLUSTER = 4
+    }
+
     fun layoutFor(mode: com.akssri.krkey.state.InputMode): List<List<Any>> {
         return layers[mode.layer] ?: layers[KeyboardLayer.INDIC]!!
     }
@@ -261,7 +311,7 @@ data class ScriptData(
 private val DEVA_VOWELS = listOf("अ", "आ", "इ", "ई", "उ", "ऊ", "ऋ", "ॠ", "ऌ", "ॡ", "ए", "ऐ", "ऎ", "ओ", "औ", "ऒ")
 private val DEVA_MATRAS = listOf("्", "ा", "ि", "ी", "ु", "ू", "ृ", "ॄ", "ॢ", "ॣ", "े", "ै", "ॆ", "ो", "ौ", "ॊ")
 private val DEVA_CONSONANTS =
-    setOf("क", "ख", "ग", "घ", "ङ", "च", "छ", "ज", "झ", "ञ", "ट", "ठ", "ड", "ढ", "ण", "त", "थ", "द", "ध", "न", "प", "फ", "ब", "भ", "म", "य", "र", "ल", "व", "श", "ष", "स", "ह", "ळ", "ऱ", "ऴ", "ऩ", "क़", "ख़", "ग़", "ज़", "ड़", "ढ", "फ़", "य़")
+    setOf("क", "ख", "ग", "घ", "ङ", "च", "छ", "ज", "झ", "ञ", "ट", "ठ", "ड", "ढ", "ण", "त", "थ", "द", "ध", "न", "प", "फ", "ब", "भ", "म", "य", "र", "ल", "व", "श", "ष", "स", "ह", "ळ", "ऱ", "ऴ", "ऩ", "क़", "ख़", "ग़", "ज़", "ड़", "\u095D", "फ़", "य़")
 private val DEVA_MODIFIERS = setOf("ं", "ँ", "ः", "ऽ", "़", "्")
 
 object ScriptManager {
@@ -337,7 +387,16 @@ object ScriptManager {
                     }
                 }
             }
-        return ScriptData(script, localConsonants, localModifiers, localVowelToMatra, prefixableChars, filteredLayers)
+        return ScriptData(
+            script,
+            localConsonants,
+            localModifiers,
+            localVowelToMatra,
+            prefixableChars,
+            filteredLayers,
+            virama = "\u094D".toBrahmiScript(script),
+            nukta = "\u093C".toBrahmiScript(script),
+        )
     }
 
     private fun transliterateGrid(
@@ -370,7 +429,8 @@ fun formatKeyText(
     scriptData: ScriptData,
 ): String {
     if (raw.isEmpty()) return ""
-    val isConsonantBase = currentBaseChar.isNotEmpty() && scriptData.consonants.contains(currentBaseChar)
+    // The base may be a whole conjunct (see ScriptData.keyBase); it takes vowel signs if it ends in a consonant
+    val isConsonantBase = scriptData.endsWithConsonant(currentBaseChar)
     val matra = scriptData.vowelToMatraMap[raw]
     if (matra != null && isConsonantBase) return currentBaseChar + matra
     if (raw in scriptData.modifiers) {
