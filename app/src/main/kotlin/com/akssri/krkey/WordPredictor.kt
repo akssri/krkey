@@ -68,13 +68,7 @@ class WordPredictor(
         }
 
     // Average key size; 0 if the keys had not been laid out yet
-    private val keyUnit: Float =
-        run {
-            if (keys.isEmpty()) return@run 0f
-            val widths = keys.map { it.right - it.left }
-            val heights = keys.map { it.bottom - it.top }
-            ((widths.sum() / widths.size) + (heights.sum() / heights.size)) / 2f
-        }
+    private val keyUnit: Float = keyUnit(keys)
 
     /** False when built from unlaid-out (0x0) keys: swipes cannot be decoded and it should be rebuilt. */
     val hasGeometry: Boolean = keyUnit > MIN_KEY_UNIT_PX
@@ -428,23 +422,33 @@ class WordPredictor(
         p2: Pt,
     ): Double = Math.hypot(p1.x - p2.x, p1.y - p2.y)
 
-    private companion object {
-        const val M = 48 // resampled swipe points
-        const val BEAM = 200 // prefixes kept per letter (tools/swipe-sim/beam_eval.py)
-        const val BEAM_ALPHA = 0.5 // share of the unexplained-swipe cost charged when ranking prefixes
-        const val MIN_KEY_UNIT_PX = 1f
-        const val TOP_K = 5
-        const val MAX_WORD_LENGTH = 32
+    companion object {
+        /** Whether these keys are laid out, so a predictor built from them can decode swipes. */
+        fun hasGeometry(keys: List<KeyBox>): Boolean = keyUnit(keys) > MIN_KEY_UNIT_PX
+
+        private fun keyUnit(keys: List<KeyBox>): Float {
+            if (keys.isEmpty()) return 0f
+            val widths = keys.map { it.right - it.left }
+            val heights = keys.map { it.bottom - it.top }
+            return ((widths.sum() / widths.size) + (heights.sum() / heights.size)) / 2f
+        }
+
+        private const val M = 48 // resampled swipe points
+        private const val BEAM = 200 // prefixes kept per letter (tools/swipe-sim/beam_eval.py)
+        private const val BEAM_ALPHA = 0.5 // share of the unexplained-swipe cost charged when ranking prefixes
+        private const val MIN_KEY_UNIT_PX = 1f
+        private const val TOP_K = 5
+        private const val MAX_WORD_LENGTH = 32
 
         // Weights, tuned with tools/swipe-sim/tune.py and refine.py (held-out top-1 94.0% vs 88.2% before)
-        const val W_PT = 1.0 // letter key to aligned point
-        const val W_DEV = 1.0 // deviation from the letter-to-letter line
-        const val W_BACK = 3.0 // moving against that line
-        const val W_LEAD = 3.0 // swipe before the first letter, per key length
-        const val W_TAIL = 1.5 // swipe after the last letter, per key length
-        const val FREQ_PRIOR_WEIGHT = 0.2 // per ln(rank + 2)
+        private const val W_PT = 1.0 // letter key to aligned point
+        private const val W_DEV = 1.0 // deviation from the letter-to-letter line
+        private const val W_BACK = 3.0 // moving against that line
+        private const val W_LEAD = 3.0 // swipe before the first letter, per key length
+        private const val W_TAIL = 1.5 // swipe after the last letter, per key length
+        private const val FREQ_PRIOR_WEIGHT = 0.2 // per ln(rank + 2)
 
-        const val LEARNED_ONLY_RANK = 1000 // rank of a learned word seen once is at most this / 2^1.5
-        const val LEARNED_RANK_DECAY = 1.5 // rank <= LEARNED_ONLY_RANK / (1 + times learned)^decay
+        private const val LEARNED_ONLY_RANK = 1000 // rank of a learned word seen once is at most this / 2^1.5
+        private const val LEARNED_RANK_DECAY = 1.5 // rank <= LEARNED_ONLY_RANK / (1 + times learned)^decay
     }
 }

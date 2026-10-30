@@ -86,6 +86,20 @@ class KrKeyIME : InputMethodService() {
     private var lastGestureHadSpace: Boolean = false
     private var expectedSelStart: Int = -1
 
+    // Swipes made while the predictor was still building (after a cold start), decoded when it is
+    // ready if nothing else happened meanwhile: no tap, flick or special key, the cursor where the
+    // last one left it, the same layer and field
+    private class HeldSwipe(
+        val path: List<PointF>,
+        val times: List<Long>,
+    )
+
+    private val heldSwipes = mutableListOf<HeldSwipe>()
+    private var heldSwipeSelStart = -1
+    private var heldSwipeMode: InputMode? = null
+    private var heldSwipeScript: BrahmiScript? = null
+    private var lastSelStart = -1 // the cursor, from the editor; -1 for a selection or unknown
+
     // Automatic spacing around swiped/picked words and punctuation:
     //   PHANTOM: a space not yet inserted; the next letter/digit/opening bracket gets it first.
     //   ANTIPHANTOM: an inserted automatic space; a space tap is swallowed, sentence punctuation
@@ -299,6 +313,11 @@ class KrKeyIME : InputMethodService() {
         keyLocator.initialize(layout.findViewById(R.id.keyboard_rows))
 
         predictionManager = PredictionManager(this, assets, keyLocator, allKeys, layout.findViewById(R.id.keyboard_rows))
+        // Predictors build in the background; show the candidates for a word typed meanwhile
+        predictionManager.onPredictorReady = {
+            replayHeldSwipes()
+            if (currentPeckedWord.length >= 2) updatePeckedCandidates()
+        }
         setupCandidateClickListener()
         setupSpecialKeyListeners()
 
@@ -344,6 +363,7 @@ class KrKeyIME : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        heldSwipes.clear()
         cancelAllPointers() // e.g. keyboard hidden while backspace is held
         if (finishingInput) {
             requestHideSelf(0)
@@ -485,6 +505,7 @@ class KrKeyIME : InputMethodService() {
     ) {
         stopPointer(state)
         if (!perform) return
+        heldSwipes.clear()
         when (state.specialKey) {
             SpecialKey.SPACE ->
                 if (state.isSpaceDragging) {
@@ -755,8 +776,19 @@ class KrKeyIME : InputMethodService() {
 
         allKeys = activeKeys
         keyLocator.initialize(container, allKeys)
-        container.post { keyLocator.rebuildCache() }
+        container.post {
+            keyLocator.rebuildCache()
+            prefetchPredictor()
+        }
         currentLayoutGrid = layout
+    }
+
+    // Start building the predictor once a letter grid is laid out, so the first word doesn't wait
+    // for it; the symbol and numeric grids have the wrong keys for a predictor's geometry
+    private fun prefetchPredictor() {
+        val mode = keyboardState.mode
+        if (!::predictionManager.isInitialized || mode.isSymbol() || mode.isNumeric() || isPasswordField) return
+        predictionManager.prepare(mode.isLatin(), keyboardState.script)
     }
 
     private fun findSpecialKeyAt(
@@ -1001,6 +1033,7 @@ class KrKeyIME : InputMethodService() {
         key: FlickKeyView?,
     ) {
         if (path.isEmpty() || key == null) return
+        heldSwipes.clear()
         val tuple = key.tag as? Pair<*, *> ?: return
         val scriptData = ScriptManager.getScriptData(keyboardState.script)
         val isFlick = isFlickGesture(path)
@@ -1039,6 +1072,7 @@ class KrKeyIME : InputMethodService() {
         candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        lastSelStart = if (newSelStart == newSelEnd) newSelStart else -1
         if (spaceState != SpaceState.NONE) {
             // Updates for our own edits can arrive late, so shortly after the automatic-space
             // edit they only move the anchor; after that, any cursor movement cancels the state
@@ -1063,6 +1097,8 @@ class KrKeyIME : InputMethodService() {
         restarting: Boolean,
     ) {
         super.onStartInputView(info, restarting)
+        heldSwipes.clear()
+        lastSelStart = if (info != null && info.initialSelStart == info.initialSelEnd) info.initialSelStart else -1
         userDict.load()
         autoSpaceAllowed = allowsAutoSpace(info)
         isTypeNullField = (info?.inputType ?: InputType.TYPE_CLASS_TEXT) == InputType.TYPE_NULL
@@ -1167,20 +1203,27 @@ class KrKeyIME : InputMethodService() {
         candidateView?.showCandidates(matches, (firstChar != null && firstChar.isUpperCase()) || isSentenceStart())
     }
 
+    /**
+     * [afterSwipedWord]: a replayed held swipe right after another replayed word, in the same
+     * main-thread turn. Asynchronous editors (Firefox) may not report that word yet, so the space
+     * and capitalisation are not read from the editor: it always gets a space, and no sentence
+     * start (swipes type no punctuation).
+     */
     private fun performGestureTyping(
         path: List<PointF>,
         times: List<Long>,
+        afterSwipedWord: Boolean = false,
     ): Boolean {
         predictionManager.ensurePredictor(keyboardState.mode.isLatin(), keyboardState.script, userDict.getLearnedWords())
         val res = predictionManager.predictGesture(path)
         if (res.isNotEmpty()) {
             val word = res[0].first
-            val shouldCaps = isSentenceStart()
+            val shouldCaps = if (afterSwipedWord) keyboardState.mode.isShifted() else isSentenceStart()
             lastGestureWord = word
             val out = if (shouldCaps) word.replaceFirstChar { it.uppercase() } else word
 
             val ic = currentInputConnection ?: return true
-            val space = if (needsPrecedingSpace()) " " else ""
+            val space = if (afterSwipedWord || needsPrecedingSpace()) " " else ""
             lastGestureHadSpace = space.isNotEmpty()
             commit(space + out)
 
@@ -1193,7 +1236,31 @@ class KrKeyIME : InputMethodService() {
             }
             return true
         }
+        if (predictionManager.isBuilding(keyboardState.mode.isLatin(), keyboardState.script)) {
+            DebugLog.d { "swipe held: predictor still building" }
+            heldSwipes.add(HeldSwipe(path.toList(), times.toList()))
+            heldSwipeSelStart = lastSelStart
+            heldSwipeMode = keyboardState.mode
+            heldSwipeScript = keyboardState.script
+        }
         return false
+    }
+
+    private fun replayHeldSwipes() {
+        if (heldSwipes.isEmpty()) return
+        val held = heldSwipes.toList()
+        heldSwipes.clear()
+        if (keyboardState.mode != heldSwipeMode || keyboardState.script != heldSwipeScript || lastSelStart != heldSwipeSelStart) {
+            DebugLog.d { "held swipes dropped: layer or cursor changed" }
+            return
+        }
+        DebugLog.d { "replaying ${held.size} held swipe(s)" }
+        var afterWord = false
+        for (swipe in held) {
+            // As a live swipe does when it starts: accept (learn and log) the previous swiped word
+            if (afterWord) commitCurrentInput()
+            afterWord = performGestureTyping(swipe.path, swipe.times, afterSwipedWord = afterWord)
+        }
     }
 
     private fun deleteLastChar() {
