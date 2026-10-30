@@ -57,6 +57,9 @@ class KrKeyIME : InputMethodService() {
         private const val TYPED_TAIL_MAX = 64
         private const val MAX_GRIDS = 8 // built layer grids kept (e.g. two scripts' layers)
         private const val ZWNJ = "\u200C" // zero-width non-joiner
+        private const val CLUSTER_EXPANSION_DELAY_MS = 400L
+        private const val EXPANSION_SETTLE_MS = 300L
+        private const val MAX_COLLAPSE_RETRIES = 3
 
         // "e. g" / "i. e" left by auto-spacing, about to be closed with "."
         private val ABBREVIATION_SPLIT = Regex("(?:^|\\W)(?:[Ee]\\. [Gg]|[Ii]\\. [Ee])$")
@@ -99,7 +102,37 @@ class KrKeyIME : InputMethodService() {
     private var heldSwipeSelStart = -1
     private var heldSwipeMode: InputMode? = null
     private var heldSwipeScript: BrahmiScript? = null
-    private var lastSelStart = -1 // the cursor, from the editor; -1 for a selection or unknown
+
+    // The cursor: from the editor, moved along by our own edits (commit/deleteBefore); -1 for a
+    // selection or unknown
+    private var lastSelStart = -1
+
+    // The editor's latest reported selection, and when it came
+    private var editorSelStart = -1
+    private var editorSelEnd = -1
+    private var editorSelAt = 0L
+
+    // An expanded cluster: [startOffset, endOffset) holds it, and `inserted` the offsets of the
+    // ZWNJs we put in it (after each joining virama). It stays expanded while the user edits
+    // inside it: the offsets follow every edit (trackEdit). It is collapsed once, by removing
+    // only those ZWNJs (still checked to be ZWNJs), when the cursor leaves or another key is used
+    private class ActiveExpansion(
+        var startOffset: Int,
+        var endOffset: Int,
+        val inserted: MutableList<Int>,
+    )
+
+    // Our last expansion edit or akshara cursor move: the editor's updates for it can arrive late
+    // and report old positions, so for EXPANSION_SETTLE_MS after it they are checked only later
+    private var expansionEditAt = 0L
+
+    private var activeExpansion: ActiveExpansion? = null
+    private val expansionHandler = Handler(Looper.getMainLooper())
+    private val expandRunnable = Runnable { performClusterExpansion() }
+    private val expansionRecheck = Runnable { recheckExpansion() }
+    private var collapseRetries = 0
+    private var collapsePending = false // a collapse failed (text unreadable) and is retried
+    private var expansionTargetSel = -1 // where the drag left the cursor, for a pending expansion
 
     // Automatic spacing around swiped/picked words and punctuation:
     //   PHANTOM: a space not yet inserted; the next letter/digit/opening bracket gets it first.
@@ -365,6 +398,9 @@ class KrKeyIME : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        collapseActiveExpansion()
+        dropExpansion()
+        cancelExpansionSchedule()
         super.onFinishInputView(finishingInput)
         heldSwipes.clear()
         cancelAllPointers() // e.g. keyboard hidden while backspace is held
@@ -411,6 +447,8 @@ class KrKeyIME : InputMethodService() {
         }
 
     private fun onSpaceTap() {
+        collapseActiveExpansion()
+        cancelExpansionSchedule()
         // A space right after an automatic one is swallowed
         val swallow = hasAntiphantomSpace()
         DebugLog.d { if (swallow) "space: swallowed (automatic space already there)" else "space: inserted (state=$spaceState)" }
@@ -430,22 +468,324 @@ class KrKeyIME : InputMethodService() {
         if (!state.isSpaceDragging && dx > SPACE_DRAG_THRESHOLD_DP * density && dx > dy) {
             state.isSpaceDragging = true
             resetSpaceState()
+            cancelExpansionSchedule()
             state.lastSpaceDragX = x
         }
         if (!state.isSpaceDragging) return
         val step = SPACE_DRAG_STEP_DP * density
         val steps = ((x - state.lastSpaceDragX) / step).toInt()
         if (steps == 0) return
+        cancelExpansionSchedule()
         val ic = currentInputConnection ?: return
-        val code = if (steps > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
-        repeat(Math.abs(steps)) {
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+
+        if (keyboardState.mode.isLatin() || isTypeNullField || editorHidesText) {
+            val code = if (steps > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
+            repeat(Math.abs(steps)) {
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+            }
+            state.lastSpaceDragX += steps * step
+            return
+        }
+
+        // Indic akshara-level cursor navigation
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+        var curSel = cursorPos()
+        val count = Math.abs(steps)
+
+        if (steps < 0) {
+            // Moving LEFT
+            activeExpansion?.let { exp ->
+                if (curSel <= exp.startOffset || curSel > exp.endOffset) {
+                    collapseActiveExpansion()
+                    curSel = cursorPos()
+                }
+            }
+            var before = ic.getTextBeforeCursor(128, 0)?.toString() ?: ""
+            var totalDelta = 0
+            for (stepIdx in 0 until count) {
+                val trailing = IndicClusterUtils.getTrailingAkshara(before, scriptData)
+                if (trailing.isEmpty()) break
+                totalDelta += trailing.length
+                before = before.dropLast(trailing.length)
+            }
+            if (totalDelta > 0) {
+                curSel = maxOf(0, curSel - totalDelta)
+                ic.setSelection(curSel, curSel)
+                lastSelStart = curSel
+                expansionEditAt = SystemClock.uptimeMillis()
+                snapBeforeZwnj()
+            }
+        } else {
+            // Moving RIGHT
+            activeExpansion?.let { exp ->
+                if (curSel < exp.startOffset || curSel >= exp.endOffset) {
+                    collapseActiveExpansion()
+                    curSel = cursorPos()
+                }
+            }
+            var after = ic.getTextAfterCursor(128, 0)?.toString() ?: ""
+            var totalDelta = 0
+            for (stepIdx in 0 until count) {
+                // The cursor rests before an expansion's ZWNJ: step over it with the next syllable
+                if (after.startsWith(IndicClusterUtils.ZWNJ)) {
+                    totalDelta += 1
+                    after = after.drop(1)
+                }
+                val leading = IndicClusterUtils.getLeadingAkshara(after, scriptData)
+                if (leading.isEmpty()) break
+                totalDelta += leading.length
+                after = after.drop(leading.length)
+            }
+            if (totalDelta > 0) {
+                curSel += totalDelta
+                ic.setSelection(curSel, curSel)
+                lastSelStart = curSel
+                expansionEditAt = SystemClock.uptimeMillis()
+                snapBeforeZwnj()
+            }
         }
         state.lastSpaceDragX += steps * step
+        scheduleClusterExpansion()
+    }
+
+    // Only called from the space-bar drag: expanding is a real edit of the text, so it must never
+    // happen on its own (a tap into the text, an app moving the cursor, a pause while typing)
+    private fun scheduleClusterExpansion() {
+        expansionHandler.removeCallbacks(expandRunnable)
+        expansionTargetSel = -1
+        if (keyboardState.mode.isLatin() || isTypeNullField || editorHidesText) return
+        if (currentPeckedWord.isNotEmpty() || lastGestureWord != null) return
+
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
+        if (before.isEmpty()) return
+
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+        val trailing = IndicClusterUtils.getTrailingAkshara(before, scriptData)
+        if (trailing.isNotEmpty() && IndicClusterUtils.isConjunctCluster(trailing, scriptData)) {
+            expansionTargetSel = cursorPos()
+            expansionHandler.postDelayed(expandRunnable, CLUSTER_EXPANSION_DELAY_MS)
+        }
+    }
+
+    private fun cancelExpansionSchedule() {
+        expansionHandler.removeCallbacks(expandRunnable)
+        expansionTargetSel = -1
+    }
+
+    // The cursor position, from the editor's selection updates (and the field's initial
+    // selection); measuring the text before the cursor is capped and wrong past 10,000 chars
+    private fun cursorPos(): Int {
+        if (lastSelStart != -1) return lastSelStart
+        return currentInputConnection?.getTextBeforeCursor(10000, 0)?.length ?: 0
+    }
+
+    private fun performClusterExpansion() {
+        val target = expansionTargetSel
+        expansionTargetSel = -1
+        if (keyboardState.mode.isLatin() || isTypeNullField || editorHidesText) return
+        if (currentPeckedWord.isNotEmpty() || lastGestureWord != null) return
+        val ic = currentInputConnection ?: return
+        // Only where the drag left the cursor: it may have been moved since (tap, app)
+        if (target < 0 || cursorPos() != target) return
+        // One expansion at a time: a second one would lose track of the first one's ZWNJs
+        if (activeExpansion != null) {
+            collapseActiveExpansion()
+            if (activeExpansion != null) return
+        }
+        val curSel = cursorPos()
+        val before = ic.getTextBeforeCursor(64, 0)?.toString() ?: ""
+        if (before.isEmpty()) return
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+
+        val trailing = IndicClusterUtils.getTrailingAkshara(before, scriptData)
+        if (trailing.isNotEmpty() && IndicClusterUtils.isConjunctCluster(trailing, scriptData)) {
+            val expanded = IndicClusterUtils.expandCluster(trailing, scriptData)
+            if (expanded != trailing) {
+                DebugLog.d { "expand cluster before cursor: '$trailing' -> '$expanded'" }
+                val startOffset = curSel - trailing.length
+                val newSel = startOffset + expanded.length
+                ic.beginBatchEdit()
+                deleteBefore(trailing)
+                commit(expanded)
+                ic.setSelection(newSel, newSel)
+                ic.endBatchEdit()
+                lastSelStart = newSel
+                activeExpansion = ActiveExpansion(startOffset, newSel, insertedZwnjs(trailing, expanded, startOffset))
+                expansionEditAt = SystemClock.uptimeMillis()
+                collapseRetries = 0
+                updateUI()
+            }
+        }
+    }
+
+    // Offsets of the ZWNJs `expanded` adds to `original` (it only inserts them), from `start`
+    private fun insertedZwnjs(
+        original: String,
+        expanded: String,
+        start: Int,
+    ): MutableList<Int> {
+        val offsets = mutableListOf<Int>()
+        var j = 0
+        for (i in expanded.indices) {
+            if (j < original.length && expanded[i] == original[j]) {
+                j++
+            } else {
+                offsets.add(start + i)
+            }
+        }
+        return offsets
+    }
+
+    // Keeps the cursor and the expansion's offsets in step with an edit at the cursor that
+    // removes `removed` chars before it and inserts `added`
+    private fun trackEdit(
+        removed: Int,
+        added: Int,
+    ) {
+        val c = lastSelStart
+        if (c != -1) lastSelStart = c - removed + added
+        val exp = activeExpansion ?: return
+        expansionEditAt = SystemClock.uptimeMillis()
+        if (c == -1) {
+            // Replacing a selection we could not collapse around: the offsets are lost
+            DebugLog.d { "expansion dropped: edit at an unknown cursor" }
+            dropExpansion()
+            return
+        }
+        val delta = added - removed
+
+        fun moved(p: Int) =
+            when {
+                p >= c -> p + delta
+                p > c - removed -> c - removed // inside the deleted text
+                else -> p
+            }
+        exp.inserted.removeAll { it in c - removed until c }
+        exp.inserted.replaceAll { if (it >= c) it + delta else it }
+        exp.startOffset = moved(exp.startOffset)
+        exp.endOffset = moved(exp.endOffset)
+        if (exp.endOffset <= exp.startOffset) dropExpansion()
+    }
+
+    private fun dropExpansion() {
+        activeExpansion = null
+        collapseRetries = 0
+        collapsePending = false
+        expansionHandler.removeCallbacks(expansionRecheck)
+    }
+
+    // The editor's text in [start, end), read around the selection [selStart, selEnd] (before
+    // it, selected, after it); null if the editor returns less than asked (e.g. not caught up)
+    private fun readRange(
+        start: Int,
+        end: Int,
+        selStart: Int,
+        selEnd: Int,
+    ): String? {
+        val ic = currentInputConnection ?: return null
+        val lo = minOf(start, selStart)
+        val hi = maxOf(end, selEnd)
+        val before = if (selStart > lo) ic.getTextBeforeCursor(selStart - lo, 0)?.toString() ?: return null else ""
+        val selected = if (selEnd > selStart) ic.getSelectedText(0)?.toString() ?: return null else ""
+        val after = if (hi > selEnd) ic.getTextAfterCursor(hi - selEnd, 0)?.toString() ?: return null else ""
+        if (before.length != selStart - lo || selected.length != selEnd - selStart || after.length != hi - selEnd) return null
+        return (before + selected + after).substring(start - lo, end - lo)
+    }
+
+    // Removes the ZWNJs we inserted (those still there) wherever the cursor or selection is,
+    // keeping it on the same text. If the editor's text can't be read (not caught up yet), the
+    // expansion is kept and retried shortly, rather than its ZWNJs left behind. Expansion never
+    // happens in editors that hide their text, so this edits the editor directly (no typedTail)
+    private fun collapseActiveExpansion(
+        selStart: Int = lastSelStart,
+        selEnd: Int = selStart,
+    ) {
+        val exp = activeExpansion ?: return
+        if (currentInputConnection == null) return dropExpansion()
+        var s = selStart
+        var e = selEnd
+        if (s < 0 && editorSelStart >= 0) {
+            s = editorSelStart
+            e = editorSelEnd
+        }
+        val text = if (s < 0) null else readRange(exp.startOffset, exp.endOffset, s, e)
+        if (text == null) {
+            if (collapseRetries++ >= MAX_COLLAPSE_RETRIES) {
+                DebugLog.d { "collapse: range unreadable, giving up (ZWNJs left at ${exp.inserted})" }
+                return dropExpansion()
+            }
+            DebugLog.d { "collapse: range unreadable (sel $s..$e), retrying" }
+            collapsePending = true
+            expansionHandler.removeCallbacks(expansionRecheck)
+            expansionHandler.postDelayed(expansionRecheck, EXPANSION_SETTLE_MS)
+            return
+        }
+        dropExpansion()
+        val ours = exp.inserted.filter { it in exp.startOffset until exp.endOffset && text[it - exp.startOffset] == '\u200C' }.sortedDescending()
+        if (ours.isEmpty()) return
+        val newStart = s - ours.count { it < s }
+        val newEnd = e - ours.count { it < e }
+        DebugLog.d { "collapse expansion: '$text' removing ZWNJs at $ours (sel $s..$e -> $newStart..$newEnd)" }
+        val ic = currentInputConnection ?: return
+        ic.beginBatchEdit()
+        for (p in ours) {
+            ic.setSelection(p, p + 1)
+            ic.commitText("", 1)
+        }
+        ic.setSelection(newStart, newEnd)
+        ic.endBatchEdit()
+        lastSelStart = if (newStart == newEnd) newStart else -1
+        expansionEditAt = SystemClock.uptimeMillis()
+    }
+
+    // Once our edits have settled: checks the editor's latest selection against the expansion
+    // (it was not trusted while updates for our edits could still arrive), or retries a collapse
+    private fun recheckExpansion() {
+        if (editorSelAt > expansionEditAt) {
+            lastSelStart = if (editorSelStart == editorSelEnd) editorSelStart else -1
+        }
+        checkExpansion()
+        updateUI()
+    }
+
+    // Collapses when the cursor has left the expansion, text is selected or a collapse is pending,
+    // else keeps the cursor before a separating ZWNJ (e.g. after a tap inside it)
+    private fun checkExpansion() {
+        val exp = activeExpansion ?: return
+        val cur = lastSelStart
+        if (collapsePending || cur == -1 || cur < exp.startOffset || cur > exp.endOffset) {
+            collapseActiveExpansion()
+        } else {
+            snapBeforeZwnj()
+        }
+    }
+
+    // Inside an expansion the cursor rests before a separating ZWNJ, never right after one, so
+    // typed text joins the part on its left and the ZWNJ keeps the part on its right apart
+    private fun snapBeforeZwnj() {
+        val exp = activeExpansion ?: return
+        val cur = lastSelStart
+        if (cur <= exp.startOffset || cur >= exp.endOffset) return
+        if (cur - 1 !in exp.inserted) return
+        val ic = currentInputConnection ?: return
+        ic.setSelection(cur - 1, cur - 1)
+        lastSelStart = cur - 1
+        expansionEditAt = SystemClock.uptimeMillis()
+    }
+
+    // Whether the cursor is inside the expansion, where typing and backspace keep it expanded
+    // (at its start the edit is before the cluster)
+    private fun cursorInExpansion(): Boolean {
+        val exp = activeExpansion ?: return false
+        val cur = lastSelStart
+        return !collapsePending && cur != -1 && cur > exp.startOffset && cur <= exp.endOffset
     }
 
     private fun onGlobe() {
+        collapseActiveExpansion()
+        cancelExpansionSchedule()
         val prefs = getSharedPreferences("krkey_prefs", Context.MODE_PRIVATE)
         val enabled = BrahmiScript.values().filter { !it.isExperimental && prefs.getBoolean("script_${it.name}", it == BrahmiScript.DEVANAGARI) }
 
@@ -461,6 +801,8 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun onEnter() {
+        collapseActiveExpansion()
+        cancelExpansionSchedule()
         if (hasAntiphantomSpace()) removeTrailingSpace()
         commitCurrentInput()
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
@@ -471,12 +813,16 @@ class KrKeyIME : InputMethodService() {
 
     // Shift is on the letter layers only: it switches between the script and English
     private fun onShift() {
+        collapseActiveExpansion()
+        cancelExpansionSchedule()
         commitCurrentInputKeepingSpaceState()
         keyboardState = keyboardState.toggleLanguage()
         updateUI()
     }
 
     private fun onSymbol() {
+        collapseActiveExpansion()
+        cancelExpansionSchedule()
         keyboardState = keyboardState.toggleSymbol()
         updateUI()
     }
@@ -514,7 +860,7 @@ class KrKeyIME : InputMethodService() {
         when (state.specialKey) {
             SpecialKey.SPACE ->
                 if (state.isSpaceDragging) {
-                    Unit
+                    scheduleClusterExpansion()
                 } else if (isZwnjFlick(state)) {
                     // Zero-width non-joiner: stops a conjunct after a virama in Indic text
                     DebugLog.d { "space flick: ZWNJ" }
@@ -589,6 +935,8 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun onKeyInput(text: String) {
+        cancelExpansionSchedule()
+        if (activeExpansion != null && !cursorInExpansion()) collapseActiveExpansion()
         val prevSpaceState = if (spaceState == SpaceState.ANTIPHANTOM && !hasAntiphantomSpace()) SpaceState.NONE else spaceState
         resetSpaceState()
         if (lastGestureWord != null) commitCurrentInput()
@@ -602,7 +950,7 @@ class KrKeyIME : InputMethodService() {
         }
         // A pending phantom space goes in front of the next word
         val space =
-            if (prevSpaceState == SpaceState.PHANTOM && (Character.isLetterOrDigit(cp) || cp in OPENING_BRACKETS) &&
+            if (activeExpansion == null && prevSpaceState == SpaceState.PHANTOM && (Character.isLetterOrDigit(cp) || cp in OPENING_BRACKETS) &&
                 !looksLikeUrl(textBefore(64) ?: "")
             ) {
                 " "
@@ -611,7 +959,8 @@ class KrKeyIME : InputMethodService() {
             }
 
         val isWordChar = !listOf("।", "॥", ".", ",", "!", "?", "/", "'", "\"", "\\", " ").contains(text)
-        if (!keyboardState.mode.isSymbol() && !keyboardState.mode.isNumeric() && isWordChar && text.isNotBlank()) {
+        // Inside an expanded cluster there is no word to track (it would be part of a cluster)
+        if (activeExpansion == null && !keyboardState.mode.isSymbol() && !keyboardState.mode.isNumeric() && isWordChar && text.isNotBlank()) {
             val ic = currentInputConnection ?: return
             if (currentPeckedWord.isEmpty() && expectedSelStart == -1) {
                 expectedSelStart = (ic.getTextBeforeCursor(10000, 0)?.length ?: 0) + space.length
@@ -623,8 +972,27 @@ class KrKeyIME : InputMethodService() {
         } else {
             if (currentPeckedWord.isNotEmpty()) commitCurrentInput()
             commit(space + text)
+            keepNewViramaExpanded(text)
         }
         updateUI()
+    }
+
+    // Inside an expansion, a virama typed before a consonant gets a ZWNJ too, so the new half-form
+    // is shown as such rather than joining into a conjunct
+    private fun keepNewViramaExpanded(text: String) {
+        if (activeExpansion == null) return
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+        if (scriptData.virama.isEmpty() || !text.endsWith(scriptData.virama)) return
+        val next = currentInputConnection?.getTextAfterCursor(2, 0)?.toString() ?: return
+        if (next.isEmpty()) return
+        if (!IndicClusterUtils.isConsonant(next.codePointAt(0), scriptData)) return
+        val c = lastSelStart
+        if (c == -1) return
+        commit(IndicClusterUtils.ZWNJ)
+        // Ours, so collapse removes it; the cursor rests before it
+        activeExpansion?.inserted?.add(c)
+        currentInputConnection?.setSelection(c, c)
+        lastSelStart = c
     }
 
     private fun updateUI() {
@@ -1096,7 +1464,22 @@ class KrKeyIME : InputMethodService() {
         candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        lastSelStart = if (newSelStart == newSelEnd) newSelStart else -1
+        val now = SystemClock.uptimeMillis()
+        editorSelStart = newSelStart
+        editorSelEnd = newSelEnd
+        editorSelAt = now
+        // Late updates for our own expansion edits can report old positions: shortly after one,
+        // keep our tracked cursor and check the latest report once the edits have settled
+        val expansionSettling = now - expansionEditAt < EXPANSION_SETTLE_MS
+        if (expansionSettling) {
+            expansionHandler.removeCallbacks(expansionRecheck)
+            expansionHandler.postDelayed(expansionRecheck, expansionEditAt + EXPANSION_SETTLE_MS - now)
+        } else {
+            lastSelStart = if (newSelStart == newSelEnd) newSelStart else -1
+            if (activeExpansion != null) {
+                if (newSelStart != newSelEnd) collapseActiveExpansion(newSelStart, newSelEnd) else checkExpansion()
+            }
+        }
         if (spaceState != SpaceState.NONE) {
             // Updates for our own edits can arrive late, so shortly after the automatic-space
             // edit they only move the anchor; after that, any cursor movement cancels the state
@@ -1114,6 +1497,8 @@ class KrKeyIME : InputMethodService() {
             resetInputState()
         }
         updateUI()
+        // Expansion is scheduled only by the space-bar drag (never by taps, app cursor moves or
+        // the cursor update of a collapse); a pending one fires only where the drag left the cursor
     }
 
     override fun onStartInputView(
@@ -1123,6 +1508,10 @@ class KrKeyIME : InputMethodService() {
         super.onStartInputView(info, restarting)
         heldSwipes.clear()
         lastSelStart = if (info != null && info.initialSelStart == info.initialSelEnd) info.initialSelStart else -1
+        editorSelStart = info?.initialSelStart ?: -1
+        editorSelEnd = info?.initialSelEnd ?: -1
+        editorSelAt = 0L
+        expansionEditAt = 0L
         userDict.load()
         autoSpaceAllowed = allowsAutoSpace(info)
         isTypeNullField = (info?.inputType ?: InputType.TYPE_CLASS_TEXT) == InputType.TYPE_NULL
@@ -1288,8 +1677,24 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun deleteLastChar() {
+        cancelExpansionSchedule()
         val ic = currentInputConnection ?: return
         resetSpaceState()
+        if (activeExpansion != null) {
+            if (cursorInExpansion()) {
+                val exp = activeExpansion!!
+                val text = textBefore(16) ?: ""
+                val scriptData = ScriptManager.getScriptData(keyboardState.script)
+                val len = IndicClusterUtils.getTrailingDeletableLength(text, scriptData)
+                if (len <= cursorPos() - exp.startOffset && text.isNotEmpty()) {
+                    DebugLog.d { "backspace in expansion: $len chars" }
+                    deleteBefore(text.takeLast(len))
+                    updateUI()
+                    return
+                }
+            }
+            collapseActiveExpansion()
+        }
         if (lastGestureWord != null) {
             // Only the word: the space before it stays, so a retyped word does not stick to the
             // previous one (as AOSP/FUTO); a second backspace removes the space
@@ -1322,6 +1727,8 @@ class KrKeyIME : InputMethodService() {
             updateUI()
             return
         }
+        // One character (code point). Half-consonant units are only deleted together inside an
+        // active expansion (see deleteLastChar above): here a ZWNJ may be one the user typed
         val text = textBefore(2)
         val len = if (text != null && text.length == 2 && Character.isSurrogatePair(text[0], text[1])) 2 else 1
         if (isTypeNullField || editorHidesText || text.isNullOrEmpty()) {
@@ -1336,6 +1743,7 @@ class KrKeyIME : InputMethodService() {
         DebugLog.d { "backspace: character before cursor${if (isSpace(text.lastOrNull())) " (a space)" else ""}" }
         ic.deleteSurroundingText(len, 0)
         forgetTyped(len)
+        trackEdit(len, 0)
         updateUI()
     }
 
@@ -1358,6 +1766,7 @@ class KrKeyIME : InputMethodService() {
         if (learningAllowed) DebugLog.d { "commit '$text' ${text.codePoints().toArray().joinToString(" ") { "U+%04X".format(it) }} hidesText=$editorHidesText typeNull=$isTypeNullField" }
         ic.commitText(text, 1)
         noteTyped(text)
+        trackEdit(0, text.length)
     }
 
     private fun noteTyped(text: String) {
@@ -1379,6 +1788,7 @@ class KrKeyIME : InputMethodService() {
             ic.deleteSurroundingText(text.length, 0)
         }
         forgetTyped(text.length)
+        trackEdit(text.length, 0)
     }
 
     private fun resetInputState() {
@@ -1481,6 +1891,8 @@ class KrKeyIME : InputMethodService() {
     }
 
     private fun commitCurrentInput() {
+        collapseActiveExpansion()
+        cancelExpansionSchedule()
         val wordToLearn = if (currentPeckedWord.isNotEmpty()) currentPeckedWord.toString() else lastGestureWord
         if (learningAllowed && wordToLearn != null && wordToLearn.length > 1) userDict.learnWord(wordToLearn)
         if (lastGestureWord != null) swipeLogger.finish("accepted", lastGestureWord)
@@ -1512,6 +1924,9 @@ class KrKeyIME : InputMethodService() {
     }
 
     override fun onFinishInput() {
+        collapseActiveExpansion()
+        dropExpansion()
+        cancelExpansionSchedule()
         super.onFinishInput()
         candidateView?.showCandidates(emptyList())
         keyboardState = keyboardState.clearBaseChar()
