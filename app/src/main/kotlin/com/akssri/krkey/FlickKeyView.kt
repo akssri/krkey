@@ -21,10 +21,8 @@ import android.content.Context
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.PopupWindow
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 
@@ -48,12 +46,12 @@ class FlickKeyView
         var flickKey: FlickKey? = null
 
         private val density = context.resources.displayMetrics.density
-        private val popupYOffset = (-80f * density).toInt()
         private val hintPaddingTop = (-1f * density).toInt()
         private val hintPaddingRight = (3f * density).toInt()
 
-        private var popupWindow: PopupWindow? = null
-        private var popupTextView: TextView? = null
+        /** Where this key's preview is drawn; set by the IME for the current input view. */
+        var previewLayer: KeyPreviewLayer? = null
+        private var previewTypeface: Typeface? = null
 
         init {
             setBackgroundResource(R.drawable.key_bg)
@@ -102,19 +100,6 @@ class FlickKeyView
             addView(leftHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             addView(rightHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             addView(downHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-
-            initPopup()
-        }
-
-        private fun initPopup() {
-            val popupView = LayoutInflater.from(context).inflate(R.layout.popup_preview, null)
-            popupTextView = popupView.findViewById(R.id.popup_text)
-            popupWindow =
-                PopupWindow(popupView, LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                    isTouchable = false
-                    isFocusable = false
-                    setBackgroundDrawable(null)
-                }
         }
 
         fun setVisualState(
@@ -158,24 +143,17 @@ class FlickKeyView
 
         fun showPopup(text: String?) {
             if (text == null) return
-            popupTextView?.text = text
-            if (popupWindow?.isShowing != true) {
-                try {
-                    popupWindow?.showAsDropDown(this, 0, -this.height + popupYOffset)
-                } catch (e: Exception) {
-                }
-            }
-            popupWindow?.update()
+            previewLayer?.show(this, text, previewTypeface)
         }
 
         fun dismissPopup() {
-            if (popupWindow?.isShowing == true) popupWindow?.dismiss()
+            previewLayer?.dismiss(this)
         }
 
         fun setTypeface(typeface: Typeface?) {
             baseTextView.typeface = typeface
             flickTextView.typeface = typeface
             hintTextView.typeface = typeface
-            popupTextView?.typeface = typeface
+            previewTypeface = typeface
         }
     }

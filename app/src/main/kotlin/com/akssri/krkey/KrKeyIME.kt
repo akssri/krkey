@@ -311,7 +311,14 @@ class KrKeyIME : InputMethodService() {
 
         currentLayoutGrid = null // Force a rebuild of the grid to populate tags
         updateUI()
-        return layout
+
+        // Key previews are views over the keyboard, not PopupWindows (see KeyPreviewLayer)
+        val previewLayer = KeyPreviewLayer(themedContext)
+        flickKeyPool.forEach { it.previewLayer = previewLayer }
+        return FrameLayout(themedContext).apply {
+            addView(layout, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(previewLayer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
