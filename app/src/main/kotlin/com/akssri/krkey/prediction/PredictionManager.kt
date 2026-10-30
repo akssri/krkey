@@ -47,7 +47,8 @@ class PredictionManager(
     private val context: Context,
     private val assets: AssetManager,
     private val keyLocator: KeyLocator,
-    private val allKeys: List<FlickKeyView>,
+    // The character keys of the shown grid
+    private val currentKeys: () -> List<FlickKeyView>,
     private val container: ViewGroup,
 ) {
     private data class PredictorKey(
@@ -157,7 +158,7 @@ class PredictionManager(
 
     // The current grid's letter keys, in the container's coordinates (UI thread)
     private fun keyBoxes(): List<WordPredictor.KeyBox> =
-        allKeys.mapNotNull { k ->
+        currentKeys().mapNotNull { k ->
             if (k.parent == null || k.visibility != android.view.View.VISIBLE) return@mapNotNull null
             val tuple = k.tag as? Pair<*, *> ?: return@mapNotNull null
             val char = tuple.first as? String ?: ""

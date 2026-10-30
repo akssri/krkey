@@ -19,8 +19,10 @@ package com.akssri.krkey
 
 import android.content.Context
 import android.graphics.Typeface
+import android.text.TextPaint
 import android.text.TextUtils
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
@@ -30,11 +32,18 @@ import androidx.core.content.ContextCompat
 /**
  * setText re-shapes the text and requests a layout of the whole keyboard even when the text is
  * the same; updateUI relabels every key after every keystroke, so it must skip unchanged labels.
+ * Returns whether the text changed.
  */
-internal fun TextView.setTextIfChanged(s: CharSequence) {
-    if (!TextUtils.equals(text, s)) text = s
+internal fun TextView.setTextIfChanged(s: CharSequence): Boolean {
+    if (TextUtils.equals(text, s)) return false
+    text = s
+    return true
 }
 
+/**
+ * A character key: its label, the up-flick hint, and (for four-direction keys only) hints for the
+ * other directions. Kept to as few text views as possible: every layer switch measures all keys.
+ */
 class FlickKeyView
     @JvmOverloads
     constructor(
@@ -43,13 +52,13 @@ class FlickKeyView
         defStyleAttr: Int = 0,
     ) : FrameLayout(context, attrs, defStyleAttr) {
         private val baseTextView: TextView
-        private val flickTextView: TextView
         private val hintTextView: TextView
 
-        // Hints for four-direction keys (left, right, down); up uses hintTextView
-        private val leftHintView: TextView
-        private val rightHintView: TextView
-        private val downHintView: TextView
+        // Hints for four-direction keys (left, right, down), created on first use; up uses hintTextView
+        private var leftHintView: TextView? = null
+        private var rightHintView: TextView? = null
+        private var downHintView: TextView? = null
+        private var hintTypeface: Typeface? = null
 
         /** Set for four-direction keys (the tag still holds `base to up`). */
         var flickKey: FlickKey? = null
@@ -57,6 +66,13 @@ class FlickKeyView
         private val density = context.resources.displayMetrics.density
         private val hintPaddingTop = (-1f * density).toInt()
         private val hintPaddingRight = (3f * density).toInt()
+
+        // Label size, shrunk only when a label (e.g. a conjunct with its vowel sign) is wider
+        // than the key. Fitted with one measureText when the text, typeface or size changes,
+        // not with TextView auto-sizing, which searches sizes on every measure
+        private val labelSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, LABEL_SP, resources.displayMetrics)
+        private val minLabelSizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, MIN_LABEL_SP, resources.displayMetrics)
+        private val measurePaint = TextPaint(TextPaint.ANTI_ALIAS_FLAG)
 
         /** Where this key's preview is drawn; set by the IME for the current input view. */
         var previewLayer: KeyPreviewLayer? = null
@@ -69,17 +85,10 @@ class FlickKeyView
 
             baseTextView =
                 TextView(context).apply {
-                    textSize = 22f
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, labelSizePx)
+                    maxLines = 1
                     gravity = Gravity.CENTER
                     setTextColor(ContextCompat.getColor(context, R.color.key_text_color))
-                }
-
-            flickTextView =
-                TextView(context).apply {
-                    textSize = 22f
-                    gravity = Gravity.CENTER
-                    visibility = View.INVISIBLE
-                    setTextColor(ContextCompat.getColor(context, R.color.flick_text_color))
                 }
 
             hintTextView =
@@ -90,45 +99,41 @@ class FlickKeyView
                     setTextColor(ContextCompat.getColor(context, R.color.hint_text_color))
                 }
 
-            val directionHint = { g: Int ->
-                TextView(context).apply {
-                    textSize = 12f
-                    gravity = g
-                    setPadding(hintPaddingRight, 0, hintPaddingRight, 0)
-                    setTextColor(ContextCompat.getColor(context, R.color.hint_text_color))
-                    visibility = View.GONE
-                }
-            }
-            leftHintView = directionHint(Gravity.START or Gravity.CENTER_VERTICAL)
-            rightHintView = directionHint(Gravity.END or Gravity.CENTER_VERTICAL)
-            downHintView = directionHint(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
-
             addView(baseTextView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            addView(flickTextView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             addView(hintTextView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            addView(leftHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            addView(rightHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            addView(downHintView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         }
 
         fun setVisualState(
             base: String,
             flick: String,
-            isFlickActive: Boolean,
         ) {
             // updateUI calls this for every key after every keystroke; setText re-shapes the text and
             // requests a layout of the whole keyboard even when nothing changed, so skip unchanged labels
-            baseTextView.setTextIfChanged(base)
+            if (baseTextView.setTextIfChanged(base)) fitLabel()
             hintTextView.setTextIfChanged(flick)
-            flickTextView.setTextIfChanged(flick)
+        }
 
-            if (isFlickActive) {
-                baseTextView.visibility = View.INVISIBLE
-                flickTextView.visibility = View.VISIBLE
-            } else {
-                baseTextView.visibility = View.VISIBLE
-                flickTextView.visibility = View.INVISIBLE
+        override fun onSizeChanged(
+            w: Int,
+            h: Int,
+            oldw: Int,
+            oldh: Int,
+        ) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            if (w != oldw) post { fitLabel() } // not during layout: changing the size requests one
+        }
+
+        private fun fitLabel() {
+            val available = (width - baseTextView.paddingLeft - baseTextView.paddingRight) * 0.9f
+            val label = baseTextView.text.toString()
+            var size = labelSizePx
+            if (available > 0 && label.isNotEmpty()) {
+                measurePaint.typeface = baseTextView.typeface
+                measurePaint.textSize = labelSizePx
+                val textWidth = measurePaint.measureText(label)
+                if (textWidth > available) size = (labelSizePx * available / textWidth).coerceAtLeast(minLabelSizePx)
             }
+            if (Math.abs(baseTextView.textSize - size) > 0.5f) baseTextView.setTextSize(TypedValue.COMPLEX_UNIT_PX, size)
         }
 
         /** Hints for the extra directions of a four-direction key; all null for a normal key. */
@@ -140,16 +145,37 @@ class FlickKeyView
             val directional = left != null || right != null || down != null
             // Four-direction keys show the up flick centred above, like the other directions
             hintTextView.gravity = if (directional) Gravity.TOP or Gravity.CENTER_HORIZONTAL else Gravity.TOP or Gravity.END
+            if (!directional && leftHintView == null) return // never directional: no hint views at all
+            if (leftHintView == null) {
+                leftHintView = directionHint(Gravity.START or Gravity.CENTER_VERTICAL)
+                rightHintView = directionHint(Gravity.END or Gravity.CENTER_VERTICAL)
+                downHintView = directionHint(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            }
             for ((view, text) in listOf(leftHintView to left, rightHintView to right, downHintView to down)) {
-                view.setTextIfChanged(text ?: "")
+                view!!.setTextIfChanged(text ?: "")
                 view.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
             }
         }
 
+        private fun directionHint(g: Int): TextView {
+            val view =
+                TextView(context).apply {
+                    textSize = 12f
+                    gravity = g
+                    setPadding(hintPaddingRight, 0, hintPaddingRight, 0)
+                    setTextColor(ContextCompat.getColor(context, R.color.hint_text_color))
+                    visibility = View.GONE
+                    typeface = hintTypeface
+                }
+            addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            return view
+        }
+
         fun setTypefaceForHints(typeface: Typeface?) {
-            leftHintView.typeface = typeface
-            rightHintView.typeface = typeface
-            downHintView.typeface = typeface
+            hintTypeface = typeface
+            leftHintView?.typeface = typeface
+            rightHintView?.typeface = typeface
+            downHintView?.typeface = typeface
         }
 
         fun showPopup(text: String?) {
@@ -162,9 +188,16 @@ class FlickKeyView
         }
 
         fun setTypeface(typeface: Typeface?) {
-            baseTextView.typeface = typeface
-            flickTextView.typeface = typeface
+            if (baseTextView.typeface != typeface) {
+                baseTextView.typeface = typeface
+                fitLabel()
+            }
             hintTextView.typeface = typeface
             previewTypeface = typeface
+        }
+
+        private companion object {
+            const val LABEL_SP = 22f
+            const val MIN_LABEL_SP = 10f
         }
     }

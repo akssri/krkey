@@ -55,6 +55,7 @@ class KrKeyIME : InputMethodService() {
         private val OPENING_BRACKETS = "([{".codePoints().toArray().toSet()
         private const val SPACE_STATE_SETTLE_MS = 200L
         private const val TYPED_TAIL_MAX = 64
+        private const val MAX_GRIDS = 8 // built layer grids kept (e.g. two scripts' layers)
         private const val ZWNJ = "\u200C" // zero-width non-joiner
 
         // "e. g" / "i. e" left by auto-spacing, about to be closed with "."
@@ -146,9 +147,22 @@ class KrKeyIME : InputMethodService() {
     private var candidateView: CandidateView? = null
 
     // View Pool
-    private var allKeys: List<FlickKeyView> = emptyList() // All character keys
-    private var flickKeyPool: List<FlickKeyView> = emptyList() // Same as allKeys but used for layout allocation
-    private val specialKeyMap = mutableMapOf<SpecialKey, View>()
+    private var allKeys: List<FlickKeyView> = emptyList() // Character keys of the shown grid
+    private val specialKeyMap = mutableMapOf<SpecialKey, View>() // Special keys of the shown grid
+
+    // One built grid per layer (keyed by the layer's grid in ScriptData), kept so switching layers
+    // only swaps visibility instead of rebuilding and relabelling the keys; least recently used
+    // first, capped at MAX_GRIDS
+    private class KeyGrid(
+        val view: LinearLayout,
+        val keys: List<FlickKeyView>,
+        val specials: Map<SpecialKey, View>,
+    )
+
+    private val grids = LinkedHashMap<List<List<Any>>, KeyGrid>(16, 0.75f, true)
+    private var shownGrid: KeyGrid? = null
+    private var keyContext: Context? = null // themed context of the current input view
+    private var previewLayer: KeyPreviewLayer? = null
 
     private var shiftBtn: Button? = null
     private var symBtn: Button? = null
@@ -289,37 +303,29 @@ class KrKeyIME : InputMethodService() {
         candidateView = layout.findViewById(R.id.candidate_view)
         keyboardRowsContainer = layout.findViewById(R.id.keyboard_rows)
 
-        flickKeyPool = findAllFlickKeys(layout)
-        allKeys = flickKeyPool
-
-        val specialIds =
-            mapOf(
-                SpecialKey.SHIFT to R.id.key_shift,
-                SpecialKey.BACKSPACE to R.id.key_backspace,
-                SpecialKey.SYMBOL to R.id.key_sym,
-                SpecialKey.GLOBE to R.id.key_globe,
-                SpecialKey.SPACE to R.id.key_space,
-                SpecialKey.ENTER to R.id.key_enter,
-            )
-        specialIds.forEach { (key, id) ->
-            layout.findViewById<View>(id)?.let { specialKeyMap[key] = it }
-        }
-
-        shiftBtn = specialKeyMap[SpecialKey.SHIFT] as? Button
-        symBtn = specialKeyMap[SpecialKey.SYMBOL] as? Button
-        spaceBtn = specialKeyMap[SpecialKey.SPACE] as? Button
+        // A new input view: grids are built afresh in it (key size and split may have changed)
+        keyContext = themedContext
+        grids.clear()
+        shownGrid = null
+        allKeys = emptyList()
+        specialKeyMap.clear()
+        shiftBtn = null
+        symBtn = null
+        spaceBtn = null
+        // Key previews are views over the keyboard, not PopupWindows (see KeyPreviewLayer)
+        val previewLayer = KeyPreviewLayer(themedContext)
+        this.previewLayer = previewLayer
 
         keyLocator = KeyLocator(allKeys)
         keyLocator.initialize(layout.findViewById(R.id.keyboard_rows))
 
-        predictionManager = PredictionManager(this, assets, keyLocator, allKeys, layout.findViewById(R.id.keyboard_rows))
+        predictionManager = PredictionManager(this, assets, keyLocator, { allKeys }, layout.findViewById(R.id.keyboard_rows))
         // Predictors build in the background; show the candidates for a word typed meanwhile
         predictionManager.onPredictorReady = {
             replayHeldSwipes()
             if (currentPeckedWord.length >= 2) updatePeckedCandidates()
         }
         setupCandidateClickListener()
-        setupSpecialKeyListeners()
 
         val rowsContainer = layout.findViewById<View>(R.id.keyboard_rows).parent as View
         rowsContainer.setOnTouchListener { _, event -> handleGlobalTouch(event) }
@@ -328,12 +334,9 @@ class KrKeyIME : InputMethodService() {
             layout.alpha = prefs.getInt("keyboard_opacity_landscape", 80) / 100f
         }
 
-        currentLayoutGrid = null // Force a rebuild of the grid to populate tags
+        currentLayoutGrid = null // Force the grid to be shown (and built) for this input view
         updateUI()
 
-        // Key previews are views over the keyboard, not PopupWindows (see KeyPreviewLayer)
-        val previewLayer = KeyPreviewLayer(themedContext)
-        flickKeyPool.forEach { it.previewLayer = previewLayer }
         return FrameLayout(themedContext).apply {
             addView(layout, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(previewLayer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -380,27 +383,32 @@ class KrKeyIME : InputMethodService() {
         }
     }
 
-    private fun findAllFlickKeys(view: View): List<FlickKeyView> {
-        val keys = mutableListOf<FlickKeyView>()
-        if (view is FlickKeyView) {
-            keys.add(view)
-        } else if (view is ViewGroup) {
-            for (i in 0 until view.childCount) keys.addAll(findAllFlickKeys(view.getChildAt(i)))
-        }
-        return keys
-    }
-
-    // All touches are handled by handleGlobalTouch, so that a press on a special key while another
+    // A special key's button, styled as the XML buttons were. It takes no touches itself: all
+    // touches are handled by handleGlobalTouch, so that a press on a special key while another
     // finger is down (two-thumb typing) is not routed to the wrong view or dropped
-    private fun setupSpecialKeyListeners() {
-        specialKeyMap.values.forEach { v ->
-            v.setOnTouchListener(null)
-            v.setOnClickListener(null)
-            v.isClickable = false
-            v.isLongClickable = false
-            v.isFocusable = false
+    private fun newSpecialKey(
+        context: Context,
+        key: SpecialKey,
+    ): Button =
+        androidx.appcompat.widget.AppCompatButton(context).apply {
+            setBackgroundResource(if (key == SpecialKey.SPACE) R.drawable.key_bg else R.drawable.special_key_bg)
+            setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.key_text_color))
+            isAllCaps = false
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, 0)
+            text =
+                when (key) {
+                    SpecialKey.SHIFT -> "EN"
+                    SpecialKey.BACKSPACE -> "⌫"
+                    SpecialKey.SYMBOL -> "१२३"
+                    SpecialKey.GLOBE -> "🌐"
+                    SpecialKey.SPACE -> " "
+                    SpecialKey.ENTER -> "⏎"
+                }
+            isClickable = false
+            isLongClickable = false
+            isFocusable = false
         }
-    }
 
     private fun onSpaceTap() {
         // A space right after an automatic one is swallowed
@@ -627,7 +635,9 @@ class KrKeyIME : InputMethodService() {
         refreshClipboardChip()
         val mode = keyboardState.mode
         val script = keyboardState.script
-        candidateBar?.visibility = if (!mode.isSymbol() && !mode.isNumeric() && !isPasswordField) View.VISIBLE else View.GONE
+        // Same on every layer: hiding it changes the keyboard's height, and the window resize that
+        // causes is slow (window manager + app relayout). Only password fields, per field, hide it
+        candidateBar?.visibility = if (!isPasswordField) View.VISIBLE else View.GONE
 
         val tf =
             if (!mode.isLatin()) {
@@ -641,6 +651,11 @@ class KrKeyIME : InputMethodService() {
             } else {
                 Typeface.DEFAULT
             }
+
+        // Switch grids first: each grid has its own shift/symbol/space buttons to label
+        val scriptData = ScriptManager.getScriptData(script)
+        val targetLayout = scriptData.layoutFor(mode)
+        if (currentLayoutGrid !== targetLayout) showGrid(targetLayout)
 
         symBtn?.setTextIfChanged(
             if (mode.isSymbol()) {
@@ -669,10 +684,6 @@ class KrKeyIME : InputMethodService() {
         )
         spaceBtn?.typeface = tf
 
-        val scriptData = ScriptManager.getScriptData(script)
-        val targetLayout = scriptData.layoutFor(mode)
-        if (currentLayoutGrid != targetLayout) rebuildKeyboardGrid(targetLayout)
-
         allKeys.forEach { k ->
             val tuple = k.tag as? Pair<*, *> ?: return@forEach
             val base = tuple.first as String
@@ -690,7 +701,7 @@ class KrKeyIME : InputMethodService() {
                         formatKeyText(flick, keyboardState.currentBaseChar, scriptData)
                 }
 
-            k.setVisualState(displayBase, displayFlick, false)
+            k.setVisualState(displayBase, displayFlick)
             val fk = k.flickKey
             if (fk == null) {
                 k.setDirectionalHints(null, null, null)
@@ -702,58 +713,92 @@ class KrKeyIME : InputMethodService() {
         }
     }
 
-    private fun rebuildKeyboardGrid(layout: List<List<Any>>) {
+    // Shows the grid for this layer, building it the first time; the other grids stay built but GONE
+    private fun showGrid(layout: List<List<Any>>) {
         val container = keyboardRowsContainer ?: return
+        val grid =
+            grids[layout] ?: buildGrid(layout).also {
+                grids[layout] = it
+                container.addView(it.view)
+                trimGrids(container)
+            }
+        if (shownGrid !== grid) {
+            shownGrid?.view?.visibility = View.GONE
+            grid.view.visibility = View.VISIBLE
+            shownGrid = grid
+        }
 
-        container.removeAllViews()
-        var poolIdx = 0
+        allKeys = grid.keys
+        specialKeyMap.clear()
+        specialKeyMap.putAll(grid.specials)
+        shiftBtn = grid.specials[SpecialKey.SHIFT] as? Button
+        symBtn = grid.specials[SpecialKey.SYMBOL] as? Button
+        spaceBtn = grid.specials[SpecialKey.SPACE] as? Button
+
+        keyLocator.initialize(container, allKeys)
+        container.post {
+            keyLocator.rebuildCache()
+            prefetchPredictor()
+        }
+        currentLayoutGrid = layout
+    }
+
+    private fun trimGrids(container: LinearLayout) {
+        val it = grids.entries.iterator()
+        while (grids.size > MAX_GRIDS && it.hasNext()) {
+            val eldest = it.next()
+            if (eldest.value === shownGrid) continue
+            container.removeView(eldest.value.view)
+            it.remove()
+        }
+    }
+
+    // Builds a layer's rows, with its own key views and special-key buttons
+    private fun buildGrid(layout: List<List<Any>>): KeyGrid {
+        val context = keyContext ?: this
         val effectiveKeyHeight = if (keyHeightPx > 0) keyHeightPx else (50f * density).toInt()
         val margin = (3f * density).toInt()
+        val numeric = keyboardState.mode.isNumeric()
 
-        val activeKeys = mutableListOf<FlickKeyView>()
+        val gridView =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                visibility = View.GONE
+            }
+        val keys = mutableListOf<FlickKeyView>()
+        val specials = mutableMapOf<SpecialKey, View>()
+
         for (rowItems in layout) {
             val rowLayout =
-                LinearLayout(this).apply {
+                LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
                     layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 }
 
             for (item in rowItems) {
-                val view =
+                val view: View =
                     when (item) {
-                        is Pair<*, *>, is FlickKey -> {
-                            if (poolIdx < flickKeyPool.size) {
-                                flickKeyPool[poolIdx++].apply {
-                                    // Four-direction keys keep `base to up` as the tag, so code that
-                                    // only knows pairs keeps working; the rest is on the view
-                                    flickKey = item as? FlickKey
-                                    tag = if (item is FlickKey) item.base to item.up else item
-                                    activeKeys.add(this)
-                                }
-                            } else {
-                                android.util.Log.e("KrKeyIME", "Flick key pool exhausted at index $poolIdx")
-                                null
+                        is Pair<*, *>, is FlickKey ->
+                            FlickKeyView(context).apply {
+                                // Four-direction keys keep `base to up` as the tag, so code that
+                                // only knows pairs keeps working; the rest is on the view
+                                flickKey = item as? FlickKey
+                                tag = if (item is FlickKey) item.base to item.up else item
+                                previewLayer = this@KrKeyIME.previewLayer
+                                keys.add(this)
                             }
-                        }
-                        is SpecialKey -> {
-                            specialKeyMap[item]
-                        }
-                        else -> null
-                    } ?: continue
-
-                (view.parent as? ViewGroup)?.removeView(view)
-
-                val weight =
-                    if (keyboardState.mode.isNumeric()) {
-                        1f // keypad: an even grid
-                    } else if (view.id == R.id.key_space) {
-                        3.5f
-                    } else if (listOf(R.id.key_shift, R.id.key_backspace, R.id.key_sym, R.id.key_enter).contains(view.id)) {
-                        1.2f
-                    } else {
-                        1f
+                        is SpecialKey -> newSpecialKey(context, item).also { specials[item] = it }
+                        else -> continue
                     }
 
+                val weight =
+                    when {
+                        numeric -> 1f // keypad: an even grid
+                        item == SpecialKey.SPACE -> 3.5f
+                        item is SpecialKey && item != SpecialKey.GLOBE -> 1.2f
+                        else -> 1f
+                    }
                 view.layoutParams =
                     LinearLayout.LayoutParams(0, effectiveKeyHeight, weight).apply {
                         setMargins(margin, margin, margin, margin)
@@ -765,22 +810,15 @@ class KrKeyIME : InputMethodService() {
             if (splitGapWeight > 0f) {
                 val midpoint = rowLayout.childCount / 2
                 val spacer =
-                    Space(this).apply {
+                    Space(context).apply {
                         layoutParams = LinearLayout.LayoutParams(0, effectiveKeyHeight, splitGapWeight)
                     }
                 rowLayout.addView(spacer, midpoint)
             }
 
-            container.addView(rowLayout)
+            gridView.addView(rowLayout)
         }
-
-        allKeys = activeKeys
-        keyLocator.initialize(container, allKeys)
-        container.post {
-            keyLocator.rebuildCache()
-            prefetchPredictor()
-        }
-        currentLayoutGrid = layout
+        return KeyGrid(gridView, keys, specials)
     }
 
     // Start building the predictor once a letter grid is laid out, so the first word doesn't wait

@@ -200,7 +200,7 @@ No `setComposingText` — all text goes through `commitText` to avoid doubling b
 `Symbol(fromLatin: Boolean)` replaces separate `IndicSymbol`/`LatinSymbol` modes. The `fromLatin` flag preserves context for returning to the correct base layer and selecting the right numeral style.
 
 ### Dynamic Layouts
-`rebuildKeyboardGrid()` shuffles `FlickKeyView` instances from a pool into rows based on the current layout grid. `allKeys` is filtered to only active keys, preventing crashes from orphaned views in `KeyLocator`.
+`showGrid()` shows the layer's grid, built once by `buildGrid()` (own key views and special-key buttons) and cached per layer; switching layers only swaps visibility. `allKeys` and `specialKeyMap` always refer to the shown grid.
 
 ---
 
