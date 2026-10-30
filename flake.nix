@@ -7,6 +7,8 @@
       url = "github:tadfisher/android-nixpkgs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Locked separately so updating it for newer tools leaves the JDK/SDK alone
+    nixpkgs-tools.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
   outputs =
@@ -14,6 +16,7 @@
       self,
       nixpkgs,
       android-nixpkgs,
+      nixpkgs-tools,
     }:
     let
       system = "x86_64-linux";
@@ -21,6 +24,7 @@
         inherit system;
         config.allowUnfree = true;
       };
+      toolsPkgs = nixpkgs-tools.legacyPackages.${system};
 
       android-composition = android-nixpkgs.sdk.${system} (
         sdkPkgs: with sdkPkgs; [
@@ -41,6 +45,7 @@
             android-composition
             adb-sync
             scrcpy
+            toolsPkgs.perfetto.tools # trace_processor_shell, traceconv
           ];
 
           shellHook = ''
