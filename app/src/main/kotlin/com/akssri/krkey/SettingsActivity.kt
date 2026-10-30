@@ -64,6 +64,31 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupHeightSliders() {
         val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
 
+        // Portrait height: range 180–300dp, so max=120, value = pref - 180
+        val portraitHeight = prefs.getInt("keyboard_height_portrait", 220)
+        val portraitLabel = findViewById<TextView>(R.id.label_portrait_height)
+        val portraitSeekBar = findViewById<SeekBar>(R.id.seekbar_portrait_height)
+        portraitLabel.text = "Height: ${portraitHeight}dp"
+        portraitSeekBar.max = 120
+        portraitSeekBar.progress = portraitHeight - 180
+        portraitSeekBar.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar,
+                    progress: Int,
+                    fromUser: Boolean,
+                ) {
+                    portraitLabel.text = "Height: ${progress + 180}dp"
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+
+                override fun onStopTrackingTouch(seekBar: SeekBar) {
+                    prefs.edit().putInt("keyboard_height_portrait", seekBar.progress + 180).apply()
+                }
+            },
+        )
+
         // Landscape height: range 120–200dp, so max=80, value = pref - 120
         val landscapeHeight = prefs.getInt("keyboard_height_landscape", 160)
         val landscapeLabel = findViewById<TextView>(R.id.label_landscape_height)

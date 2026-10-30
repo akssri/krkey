@@ -37,6 +37,31 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:text="Portrait"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:id="@+id/label_portrait_height"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Height: 220dp"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorPrimary" />
+
+                <SeekBar
+                    android:id="@+id/seekbar_portrait_height"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="120"
+                    android:progress="40"
+                    android:layout_marginBottom="24dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Landscape"
                     android:textSize="16sp"
                     android:textStyle="bold"

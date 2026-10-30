@@ -265,7 +265,7 @@ class KrKeyIME : InputMethodService() {
             if (key != null && (key.startsWith("dict_") || key.startsWith("script_")) && ::predictionManager.isInitialized) {
                 predictionManager.clearCache()
             }
-            if (key in listOf("keyboard_height_landscape", "key_width_dp", "keyboard_opacity_landscape", "landscape_overlay", "landscape_split")) {
+            if (key in listOf("keyboard_height_portrait", "keyboard_height_landscape", "key_width_dp", "keyboard_opacity_landscape", "landscape_overlay", "landscape_split")) {
                 if (keyboardRowsContainer != null) {
                     setInputView(onCreateInputView())
                 }
@@ -307,17 +307,17 @@ class KrKeyIME : InputMethodService() {
         val layout = LayoutInflater.from(themedContext).inflate(R.layout.keyboard_view, null) as LinearLayout
 
         val prefs = getSharedPreferences("krkey_prefs", MODE_PRIVATE)
+        // Keyboard height per orientation (settings sliders); four rows of keys share it
+        val heightDp =
+            if (landscapeMode) {
+                prefs.getInt("keyboard_height_landscape", 160)
+            } else {
+                prefs.getInt("keyboard_height_portrait", 220)
+            }
+        keyHeightPx = (heightDp / 4.4f * density).toInt()
+        layout.findViewById<FrameLayout>(R.id.keyboard_frame).layoutParams =
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (heightDp * density).toInt())
         if (landscapeMode) {
-            val heightDp = prefs.getInt("keyboard_height_landscape", 160)
-            val containerHeightPx = (heightDp * density).toInt()
-            keyHeightPx = (heightDp / 4.4f * density).toInt()
-
-            val keyboardFrame = layout.findViewById<FrameLayout>(R.id.keyboard_frame)
-            keyboardFrame.layoutParams =
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, containerHeightPx,
-                )
-
             // Compute split gap weight based on target key width
             if (prefs.getBoolean("landscape_split", true)) {
                 val targetKeyWidthDp = prefs.getInt("key_width_dp", 42).toFloat()
@@ -327,7 +327,6 @@ class KrKeyIME : InputMethodService() {
                 splitGapWeight = 0f
             }
         } else {
-            keyHeightPx = (50f * density).toInt()
             splitGapWeight = 0f
         }
 
