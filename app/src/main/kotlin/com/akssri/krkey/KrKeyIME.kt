@@ -1706,8 +1706,8 @@ class KrKeyIME : InputMethodService() {
             return
         }
         if (!keyboardState.mode.isSymbol() && currentPeckedWord.isNotEmpty()) {
-            val len = if (currentPeckedWord.length >= 2 && Character.isSurrogatePair(currentPeckedWord[currentPeckedWord.length - 2], currentPeckedWord[currentPeckedWord.length - 1])) 2 else 1
-            DebugLog.d { "backspace: pecked character" }
+            val len = backspaceLength(currentPeckedWord.toString())
+            DebugLog.d { "backspace: pecked syllable ($len chars)" }
             deleteBefore(currentPeckedWord.substring(currentPeckedWord.length - len))
             currentPeckedWord.delete(currentPeckedWord.length - len, currentPeckedWord.length)
             if (currentPeckedWord.isEmpty()) {
@@ -1727,10 +1727,9 @@ class KrKeyIME : InputMethodService() {
             updateUI()
             return
         }
-        // One character (code point). Half-consonant units are only deleted together inside an
-        // active expansion (see deleteLastChar above): here a ZWNJ may be one the user typed
-        val text = textBefore(2)
-        val len = if (text != null && text.length == 2 && Character.isSurrogatePair(text[0], text[1])) 2 else 1
+        // One syllable (see backspaceLength)
+        val text = textBefore(32)
+        val len = if (text.isNullOrEmpty()) 1 else backspaceLength(text)
         if (isTypeNullField || editorHidesText || text.isNullOrEmpty()) {
             DebugLog.d { "backspace: key event (typeNull=$isTypeNullField hidesText=$editorHidesText empty=${text.isNullOrEmpty()})" }
             // Raw-key fields (remote input, terminals) and apps that react to backspace in an
@@ -1740,11 +1739,23 @@ class KrKeyIME : InputMethodService() {
             updateUI()
             return
         }
-        DebugLog.d { "backspace: character before cursor${if (isSpace(text.lastOrNull())) " (a space)" else ""}" }
+        DebugLog.d { "backspace: $len chars before cursor${if (isSpace(text.lastOrNull())) " (a space)" else ""}" }
         ic.deleteSurroundingText(len, 0)
         forgetTyped(len)
         trackEdit(len, 0)
         updateUI()
+    }
+
+    // What backspace deletes from the end of `text` outside an expansion: the whole syllable
+    // (akshara: conjunct with its vowel sign and marks; one character, with any combining marks,
+    // in other text). Only one code point where the editor hides its text or takes raw keys,
+    // since there the text we know may be stale and each code point is a separate key event
+    private fun backspaceLength(text: String): Int {
+        if (text.isEmpty()) return 0
+        val codePoint = Character.charCount(text.codePointBefore(text.length))
+        if (isTypeNullField || editorHidesText) return codePoint
+        val scriptData = ScriptManager.getScriptData(keyboardState.script)
+        return IndicClusterUtils.getTrailingAkshara(text, scriptData).length.coerceAtLeast(codePoint)
     }
 
     private fun sendDelKey() {
