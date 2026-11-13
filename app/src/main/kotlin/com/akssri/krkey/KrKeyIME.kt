@@ -472,7 +472,9 @@ class KrKeyIME : InputMethodService() {
         // A drag is sideways; mostly-vertical movement is a flick (ZWNJ), not a cursor move
         if (!state.isSpaceDragging && dx > SPACE_DRAG_THRESHOLD_DP * density && dx > dy) {
             state.isSpaceDragging = true
-            resetSpaceState()
+            // The cursor leaves the word being typed: forget it now, not when the editor's
+            // cursor update comes (too late for the expansion check after the first step)
+            resetInputState()
             cancelExpansionSchedule()
             state.lastSpaceDragX = x
         }
@@ -551,6 +553,7 @@ class KrKeyIME : InputMethodService() {
             }
         }
         state.lastSpaceDragX += steps * step
+        DebugLog.d { "space drag $steps -> cursor ${cursorPos()} (expansion ${activeExpansion?.let { "${it.startOffset}..${it.endOffset}" }})" }
         scheduleClusterExpansion()
     }
 
@@ -708,6 +711,8 @@ class KrKeyIME : InputMethodService() {
         selEnd: Int = selStart,
     ) {
         val exp = activeExpansion ?: return
+        // The first frame outside this function and its default-argument wrapper is the caller
+        DebugLog.d { "collapse requested by ${Throwable().stackTrace.firstOrNull { !it.methodName.startsWith("collapseActiveExpansion") }?.methodName} (sel $selStart..$selEnd, range ${exp.startOffset}..${exp.endOffset}, editor $editorSelStart..$editorSelEnd)" }
         if (currentInputConnection == null) return dropExpansion()
         var s = selStart
         var e = selEnd
