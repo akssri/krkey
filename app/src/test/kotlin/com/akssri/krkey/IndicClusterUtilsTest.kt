@@ -113,12 +113,22 @@ class IndicClusterUtilsTest {
     }
 
     @Test
-    fun testTrailingDeletableLength() {
-        assertEquals(1, IndicClusterUtils.getTrailingDeletableLength("क", deva))
-        assertEquals(1, IndicClusterUtils.getTrailingDeletableLength("का", deva))
-        // Half-consonant with ZWNJ: deletes C + Virama + ZWNJ (length 3)
-        assertEquals(3, IndicClusterUtils.getTrailingDeletableLength("नमस्\u200C", deva))
-        // Normal ZWNJ not preceded by virama: length 1
-        assertEquals(1, IndicClusterUtils.getTrailingDeletableLength("abc\u200C", deva))
+    fun testBackspaceLength() {
+        // Marks come off first, one at a time
+        assertEquals(1, IndicClusterUtils.getBackspaceLength("का", deva))
+        assertEquals(1, IndicClusterUtils.getBackspaceLength("किं", deva))
+        assertEquals(1, IndicClusterUtils.getBackspaceLength("क्षि", deva))
+        // Then the whole consonant or conjunct
+        assertEquals(1, IndicClusterUtils.getBackspaceLength("क", deva))
+        assertEquals(3, IndicClusterUtils.getBackspaceLength("नक्ष", deva))
+        assertEquals(5, IndicClusterUtils.getBackspaceLength("स्त्र", deva))
+        assertEquals(2, IndicClusterUtils.getBackspaceLength("ज़", deva))
+        // A half-consonant, with its ZWNJ when expanded
+        assertEquals(2, IndicClusterUtils.getBackspaceLength("नमस्", deva))
+        assertEquals(3, IndicClusterUtils.getBackspaceLength("नमस्\u200C", deva))
+        // A ZWNJ not after a virama, other text, and an empty text
+        assertEquals(1, IndicClusterUtils.getBackspaceLength("abc\u200C", deva))
+        assertEquals(1, IndicClusterUtils.getBackspaceLength("abc", deva))
+        assertEquals(0, IndicClusterUtils.getBackspaceLength("", deva))
     }
 }

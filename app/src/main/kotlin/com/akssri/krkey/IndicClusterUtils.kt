@@ -293,40 +293,19 @@ object IndicClusterUtils {
     }
 
     /**
-     * Returns the UTF-16 length of the atomic unit before the cursor to delete.
-     * If the cursor is right after an expanded half-consonant (e.g. C + Virama + ZWNJ),
-     * deletes the whole half-consonant component cleanly.
-     * Otherwise returns the length of the trailing code point (1 or 2 for surrogate pair).
+     * Returns the UTF-16 length that backspace deletes from the end of [textBefore]: the last
+     * vowel sign or other mark (anusvara, visarga, ...) if the syllable ends with one, so marks
+     * come off one at a time, otherwise the whole trailing akshara: the consonant or conjunct,
+     * expanded or not (a half-consonant with its ZWNJ), or one character in other text.
      */
-    fun getTrailingDeletableLength(
+    fun getBackspaceLength(
         textBefore: CharSequence,
         scriptData: ScriptData,
     ): Int {
-        if (textBefore.isEmpty()) return 1
-        val n = textBefore.length
-        val lastCp = Character.codePointBefore(textBefore, n)
-        if (isZwnj(lastCp)) {
-            val zwnjLen = Character.charCount(lastCp)
-            if (n > zwnjLen) {
-                val prevCp = Character.codePointBefore(textBefore, n - zwnjLen)
-                if (isVirama(prevCp, scriptData)) {
-                    var len = zwnjLen + Character.charCount(prevCp)
-                    if (n > len) {
-                        var cCp = Character.codePointBefore(textBefore, n - len)
-                        if (isNukta(cCp, scriptData)) {
-                            len += Character.charCount(cCp)
-                            if (n > len) {
-                                cCp = Character.codePointBefore(textBefore, n - len)
-                            }
-                        }
-                        if (isConsonant(cCp, scriptData)) {
-                            len += Character.charCount(cCp)
-                            return len
-                        }
-                    }
-                }
-            }
-        }
-        return Character.charCount(lastCp)
+        if (textBefore.isEmpty()) return 0
+        val lastCp = Character.codePointBefore(textBefore, textBefore.length)
+        val lastLen = Character.charCount(lastCp)
+        if (isCombining(lastCp) && !isVirama(lastCp, scriptData) && !isNukta(lastCp, scriptData)) return lastLen
+        return maxOf(getTrailingAkshara(textBefore, scriptData).length, lastLen)
     }
 }

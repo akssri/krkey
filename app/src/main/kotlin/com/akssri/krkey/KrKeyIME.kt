@@ -1688,9 +1688,9 @@ class KrKeyIME : InputMethodService() {
         if (activeExpansion != null) {
             if (cursorInExpansion()) {
                 val exp = activeExpansion!!
-                val text = textBefore(16) ?: ""
+                val text = textBefore(32) ?: ""
                 val scriptData = ScriptManager.getScriptData(keyboardState.script)
-                val len = IndicClusterUtils.getTrailingDeletableLength(text, scriptData)
+                val len = IndicClusterUtils.getBackspaceLength(text, scriptData)
                 if (len <= cursorPos() - exp.startOffset && text.isNotEmpty()) {
                     DebugLog.d { "backspace in expansion: $len chars" }
                     deleteBefore(text.takeLast(len))
@@ -1712,7 +1712,7 @@ class KrKeyIME : InputMethodService() {
         }
         if (!keyboardState.mode.isSymbol() && currentPeckedWord.isNotEmpty()) {
             val len = backspaceLength(currentPeckedWord.toString())
-            DebugLog.d { "backspace: pecked syllable ($len chars)" }
+            DebugLog.d { "backspace: pecked word, $len chars" }
             deleteBefore(currentPeckedWord.substring(currentPeckedWord.length - len))
             currentPeckedWord.delete(currentPeckedWord.length - len, currentPeckedWord.length)
             if (currentPeckedWord.isEmpty()) {
@@ -1732,7 +1732,7 @@ class KrKeyIME : InputMethodService() {
             updateUI()
             return
         }
-        // One syllable (see backspaceLength)
+        // A vowel sign or mark, else the consonant or conjunct (see backspaceLength)
         val text = textBefore(32)
         val len = if (text.isNullOrEmpty()) 1 else backspaceLength(text)
         if (isTypeNullField || editorHidesText || text.isNullOrEmpty()) {
@@ -1751,16 +1751,14 @@ class KrKeyIME : InputMethodService() {
         updateUI()
     }
 
-    // What backspace deletes from the end of `text` outside an expansion: the whole syllable
-    // (akshara: conjunct with its vowel sign and marks; one character, with any combining marks,
-    // in other text). Only one code point where the editor hides its text or takes raw keys,
-    // since there the text we know may be stale and each code point is a separate key event
+    // What backspace deletes from the end of `text` (IndicClusterUtils.getBackspaceLength): a
+    // vowel sign or mark, else the whole consonant or conjunct. Only one code point where the
+    // editor hides its text or takes raw keys, since there the text we know may be stale and
+    // each code point is a separate key event
     private fun backspaceLength(text: String): Int {
         if (text.isEmpty()) return 0
-        val codePoint = Character.charCount(text.codePointBefore(text.length))
-        if (isTypeNullField || editorHidesText) return codePoint
-        val scriptData = ScriptManager.getScriptData(keyboardState.script)
-        return IndicClusterUtils.getTrailingAkshara(text, scriptData).length.coerceAtLeast(codePoint)
+        if (isTypeNullField || editorHidesText) return Character.charCount(text.codePointBefore(text.length))
+        return IndicClusterUtils.getBackspaceLength(text, ScriptManager.getScriptData(keyboardState.script))
     }
 
     private fun sendDelKey() {
